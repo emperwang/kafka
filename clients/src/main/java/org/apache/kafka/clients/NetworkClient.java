@@ -248,22 +248,31 @@ public class NetworkClient implements KafkaClient {
         } else {
             this.metadataUpdater = metadataUpdater;
         }
+        // nio selector
         this.selector = selector;
+        // clientId
         this.clientId = clientId;
         this.inFlightRequests = new InFlightRequests(maxInFlightRequestsPerConnection);
+        // 连接状态
         this.connectionStates = new ClusterConnectionStates(reconnectBackoffMs, reconnectBackoffMax, logContext);
+        // 发送缓存区 带下
         this.socketSendBuffer = socketSendBuffer;
+        // 接收缓冲区大小
         this.socketReceiveBuffer = socketReceiveBuffer;
         this.correlation = 0;
         this.randOffset = new Random();
+        // 默认的 request 超时时间
         this.defaultRequestTimeoutMs = defaultRequestTimeoutMs;
+        // 重连的 wait 时间
         this.reconnectBackoffMs = reconnectBackoffMs;
         this.time = time;
         this.discoverBrokerVersions = discoverBrokerVersions;
+        // apiVersion 版本
         this.apiVersions = apiVersions;
         this.throttleTimeSensor = throttleTimeSensor;
         this.log = logContext.logger(NetworkClient.class);
         this.clientDnsLookup = clientDnsLookup;
+        // 状态
         this.state = new AtomicReference<>(State.ACTIVE);
     }
 

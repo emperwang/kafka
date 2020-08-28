@@ -157,12 +157,16 @@ public class Selector implements Selectable, AutoCloseable {
             MemoryPool memoryPool,
             LogContext logContext) {
         try {
+            // 创建  Nio selector
             this.nioSelector = java.nio.channels.Selector.open();
         } catch (IOException e) {
             throw new KafkaException(e);
         }
+        // 最大可接收数
         this.maxReceiveSize = maxReceiveSize;
+        // 当前系统时间
         this.time = time;
+        // 记录channel
         this.channels = new HashMap<>();
         this.explicitlyMutedChannels = new HashSet<>();
         this.outOfMemory = false;
@@ -176,11 +180,13 @@ public class Selector implements Selectable, AutoCloseable {
         this.disconnected = new HashMap<>();
         this.failedSends = new ArrayList<>();
         this.sensors = new SelectorMetrics(metrics, metricGrpPrefix, metricTags, metricsPerConnection);
+        // channel创建工厂
         this.channelBuilder = channelBuilder;
         this.recordTimePerConnection = recordTimePerConnection;
         this.idleExpiryManager = connectionMaxIdleMs < 0 ? null : new IdleExpiryManager(time, connectionMaxIdleMs);
         this.memoryPool = memoryPool;
         this.lowMemThreshold = (long) (0.1 * this.memoryPool.size());
+        // 日志
         this.log = logContext.logger(Selector.class);
         this.failedAuthenticationDelayMs = failedAuthenticationDelayMs;
         this.delayedClosingChannels = (failedAuthenticationDelayMs > NO_FAILED_AUTHENTICATION_DELAY) ? new LinkedHashMap<String, DelayedAuthenticationFailureClose>() : null;
@@ -214,7 +220,7 @@ public class Selector implements Selectable, AutoCloseable {
         this(maxReceiveSize, connectionMaxIdleMs, failedAuthenticationDelayMs, metrics, time, metricGrpPrefix, metricTags, metricsPerConnection, false, channelBuilder, MemoryPool.NONE, logContext);
     }
 
-
+    // maxReceiveSize 最大接收数, 默认为-1,就是没有限制
     public Selector(int maxReceiveSize,
             long connectionMaxIdleMs,
             Metrics metrics,

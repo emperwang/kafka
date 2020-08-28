@@ -40,6 +40,8 @@ import static org.apache.kafka.common.config.ConfigDef.ValidString.in;
  * The consumer configuration keys
  */
 public class ConsumerConfig extends AbstractConfig {
+    // 此CONFIG存储最后的配置
+    // 在静态代码块中初始化了
     private static final ConfigDef CONFIG;
 
     /*
@@ -263,6 +265,7 @@ public class ConsumerConfig extends AbstractConfig {
     public static final String DEFAULT_ISOLATION_LEVEL = IsolationLevel.READ_UNCOMMITTED.toString().toLowerCase(Locale.ROOT);
 
     static {
+        // 在静态代码块中初始化了
         CONFIG = new ConfigDef().define(BOOTSTRAP_SERVERS_CONFIG,
                                         Type.LIST,
                                         Collections.emptyList(),
@@ -490,19 +493,22 @@ public class ConsumerConfig extends AbstractConfig {
             newConfigs.put(VALUE_DESERIALIZER_CLASS_CONFIG, valueDeserializer.getClass());
         return newConfigs;
     }
-
+    // 添加 反序列化配置
     public static Properties addDeserializerToConfig(Properties properties,
                                                      Deserializer<?> keyDeserializer,
                                                      Deserializer<?> valueDeserializer) {
+        // 创建一个新的 properties
         Properties newProperties = new Properties();
+        // 添加之前的 配置
         newProperties.putAll(properties);
+        // 添加反序列化
         if (keyDeserializer != null)
             newProperties.put(KEY_DESERIALIZER_CLASS_CONFIG, keyDeserializer.getClass().getName());
         if (valueDeserializer != null)
             newProperties.put(VALUE_DESERIALIZER_CLASS_CONFIG, valueDeserializer.getClass().getName());
         return newProperties;
     }
-
+    // 创建 ConsumerConfig
     public ConsumerConfig(Properties props) {
         super(CONFIG, props);
     }

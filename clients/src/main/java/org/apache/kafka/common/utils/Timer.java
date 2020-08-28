@@ -54,8 +54,11 @@ public class Timer {
     private long deadlineMs;
 
     Timer(Time time, long timeoutMs) {
+        // 记录time
         this.time = time;
+        // 更新当前时间
         update();
+        // 重置超时时间
         reset(timeoutMs);
     }
 

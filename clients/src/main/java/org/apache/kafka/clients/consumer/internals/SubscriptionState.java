@@ -68,9 +68,11 @@ public class SubscriptionState {
     private Pattern subscribedPattern;
 
     /* the list of topics the user has requested */
+    // 记录订阅的topic
     private Set<String> subscription;
 
     /* the list of topics the group has subscribed to (set only for the leader on join group completion) */
+    // 消费组 订阅的 topic
     private final Set<String> groupSubscription;
 
     /* the partitions that are currently assigned, note that the order of partition matters (see FetchBuilder for more details) */
@@ -110,11 +112,11 @@ public class SubscriptionState {
     public void subscribe(Set<String> topics, ConsumerRebalanceListener listener) {
         if (listener == null)
             throw new IllegalArgumentException("RebalanceListener cannot be null");
-
+        // 设置订阅的类型
         setSubscriptionType(SubscriptionType.AUTO_TOPICS);
-
+        // rebalanceListener 记录监听器
         this.rebalanceListener = listener;
-
+        // 修改订阅信息
         changeSubscription(topics);
     }
 
@@ -128,7 +130,9 @@ public class SubscriptionState {
 
     private void changeSubscription(Set<String> topicsToSubscribe) {
         if (!this.subscription.equals(topicsToSubscribe)) {
+            // 记录订阅的topic
             this.subscription = topicsToSubscribe;
+            // 记录 topic
             this.groupSubscription.addAll(topicsToSubscribe);
         }
     }

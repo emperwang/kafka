@@ -158,7 +158,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         this.interceptors = interceptors;
         this.excludeInternalTopics = excludeInternalTopics;
         this.pendingAsyncCommits = new AtomicInteger();
-
+        // 根据是否自动提交, 来创建一个 Timer,计算下一次提交时间
         if (autoCommitEnabled)
             this.nextAutoCommitTimer = time.timer(autoCommitIntervalMs);
 
@@ -309,7 +309,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
      */
     public boolean poll(Timer timer) {
         invokeCompletedOffsetCommitCallbacks();
-
+            // 如果分配了 partition
         if (subscriptions.partitionsAutoAssigned()) {
             // Always update the heartbeat last poll time so that the heartbeat thread does not leave the
             // group proactively due to application inactivity even if (say) the coordinator cannot be found.

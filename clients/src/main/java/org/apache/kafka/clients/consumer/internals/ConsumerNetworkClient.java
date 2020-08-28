@@ -78,7 +78,7 @@ public class ConsumerNetworkClient implements Closeable {
     // this flag allows the client to be safely woken up without waiting on the lock above. It is
     // atomic to avoid the need to acquire the lock above in order to enable it concurrently.
     private final AtomicBoolean wakeup = new AtomicBoolean(false);
-
+    // consumer 客户端
     public ConsumerNetworkClient(LogContext logContext,
                                  KafkaClient client,
                                  Metadata metadata,

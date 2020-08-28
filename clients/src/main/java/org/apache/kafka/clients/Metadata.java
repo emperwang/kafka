@@ -278,10 +278,12 @@ public class Metadata implements Closeable {
      * @param topics
      */
     public synchronized void setTopics(Collection<String> topics) {
+        // 要移除的topic
         Set<TopicPartition> partitionsToRemove = lastSeenLeaderEpochs.keySet()
                 .stream()
                 .filter(tp -> !topics.contains(tp.topic()))
                 .collect(Collectors.toSet());
+        // 移除掉 上面过滤出的 topic
         partitionsToRemove.forEach(lastSeenLeaderEpochs::remove);
 
         cache.retainTopics(topics);

@@ -62,6 +62,7 @@ public interface Time {
      * Get a timer which is bound to this time instance and expires after the given timeout
      */
     default Timer timer(long timeoutMs) {
+        // 创建了一个 Timer 记录超时时间
         return new Timer(this, timeoutMs);
     }
 
