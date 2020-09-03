@@ -576,6 +576,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
     private final Metadata metadata;
     private final long retryBackoffMs;
     private final long requestTimeoutMs;
+    // 默认的超时时间, 同步提交offset时  会作为默认超时时间
     private final int defaultApiTimeoutMs;
     private volatile boolean closed = false;
     private List<PartitionAssignor> assignors;
@@ -712,6 +713,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             // 拦截器
             List<ConsumerInterceptor<K, V>> interceptorList = (List) (new ConsumerConfig(userProvidedConfigs, false)).getConfiguredInstances(ConsumerConfig.INTERCEPTOR_CLASSES_CONFIG,
                     ConsumerInterceptor.class);
+            // 拦截器
             this.interceptors = new ConsumerInterceptors<>(interceptorList);
             // 反序列化 方式
             if (keyDeserializer == null) {
@@ -734,8 +736,11 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             // 解析  broker 地址
             List<InetSocketAddress> addresses = ClientUtils.parseAndValidateAddresses(
                     config.getList(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG), config.getString(ConsumerConfig.CLIENT_DNS_LOOKUP_CONFIG));
+            // 缓存的集群信息
+            // 可见此处的 metadata 源数据,指的是 集群的信息
             this.metadata.bootstrap(addresses, time.milliseconds());
             String metricGrpPrefix = "consumer";
+            // 消费者的  监控信息
             ConsumerMetrics metricsRegistry = new ConsumerMetrics(metricsTags.keySet(), "consumer");
             // 根据不同的 协议 ,创建不同的channel
             ChannelBuilder channelBuilder = ClientUtils.createChannelBuilder(config, time);
@@ -746,6 +751,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             // consumer coordinator 和 consumer group 之间的 心跳间隔
             int heartbeatIntervalMs = config.getInt(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG);
             // 创建 客户端
+            // -- 此是操作真正 network IO的类
             NetworkClient netClient = new NetworkClient(
                     // 创建 selector
                     new Selector(config.getLong(ConsumerConfig.CONNECTIONS_MAX_IDLE_MS_CONFIG), metrics, time, metricGrpPrefix, channelBuilder, logContext),
@@ -763,6 +769,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                     new ApiVersions(),
                     throttleTimeSensor,
                     logContext);
+            // 进一步的封装
             this.client = new ConsumerNetworkClient(
                     logContext,
                     netClient,
@@ -773,7 +780,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                     heartbeatIntervalMs); //Will avoid blocking an extended period of time to prevent heartbeat thread starvation
             // offset的 重置 策略
             OffsetResetStrategy offsetResetStrategy = OffsetResetStrategy.valueOf(config.getString(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG).toUpperCase(Locale.ROOT));
-            //
+            // 订阅状态
             this.subscriptions = new SubscriptionState(offsetResetStrategy);
             // partition 分配的方法类
             this.assignors = config.getConfiguredInstances(
@@ -785,6 +792,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             int sessionTimeoutMs = config.getInt(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG);
             // no coordinator will be constructed for the default (null) group id
             // 创建一个 coordinator  consumer 协调员
+            // 协调器
             this.coordinator = groupId == null ? null :
                 new ConsumerCoordinator(logContext,
                         this.client,
@@ -1196,14 +1204,18 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
      * @throws org.apache.kafka.common.errors.InvalidTopicException if the current subscription contains any invalid
      *             topic (per {@link org.apache.kafka.common.internals.Topic#validate(String)})
      */
+    // 超时拉取消息
     @Override
     public ConsumerRecords<K, V> poll(final Duration timeout) {
+        // 使用 timer来作为 判断超期的一个 手段
         return poll(time.timer(timeout), true);
     }
-
+    // 拉取数据
     private ConsumerRecords<K, V> poll(final Timer timer, final boolean includeMetadataInTimeout) {
+        // 必须是单线程
         acquireAndEnsureOpen();
         try {
+            // 没有订阅信息,报错
             if (this.subscriptions.hasNoSubscriptionOrUserAssignment()) {
                 throw new IllegalStateException("Consumer is not subscribed to any topics or assigned any partitions");
             }
@@ -1211,9 +1223,11 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             // poll for new data until the timeout expires
             do {
                 client.maybeTriggerWakeup();
-
+                // 是否需要更新 metadata
                 if (includeMetadataInTimeout) {
+                    // 如果需要,则更新一下 metadata
                     if (!updateAssignmentMetadataIfNeeded(timer)) {
+                        // 没有更新成功,则返回一个空 列表
                         return ConsumerRecords.empty();
                     }
                 } else {
@@ -1221,7 +1235,8 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                         log.warn("Still waiting for metadata");
                     }
                 }
-
+                // 拉取数据
+                // -- 重点 ---
                 final Map<TopicPartition, List<ConsumerRecord<K, V>>> records = pollForFetches(timer);
                 if (!records.isEmpty()) {
                     // before returning the fetched records, we can send off the next round of fetches
@@ -1231,11 +1246,14 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                     // NOTE: since the consumed position has already been updated, we must not allow
                     // wakeups or any other errors to be triggered prior to returning the fetched records.
                     if (fetcher.sendFetches() > 0 || client.hasPendingRequests()) {
+                        // 再次发送一个 poll 请求
+                        // 此操作相当于是 进行了一次数据发送, 并且是立即的 没有什么等待时间
                         client.pollNoWakeup();
                     }
-
+                    // 先使用拦截器 处理一下,之后再返回拉取到的数据
                     return this.interceptors.onConsume(new ConsumerRecords<>(records));
                 }
+                // timer 没有过期,则持续执行
             } while (timer.notExpired());
 
             return ConsumerRecords.empty();
@@ -1254,18 +1272,21 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 
         return updateFetchPositions(timer);
     }
-
+    // 拉取 record
     private Map<TopicPartition, List<ConsumerRecord<K, V>>> pollForFetches(Timer timer) {
         long pollTimeout = coordinator == null ? timer.remainingMs() :
                 Math.min(coordinator.timeToNextPoll(timer.currentTimeMs()), timer.remainingMs());
 
         // if data is available already, return it immediately
+        // 如果现在已经有数据了, 那么直接返回
         final Map<TopicPartition, List<ConsumerRecord<K, V>>> records = fetcher.fetchedRecords();
         if (!records.isEmpty()) {
             return records;
         }
 
         // send any new fetches (won't resend pending fetches)
+        // --- 重点 ----
+        // 发送 fetch 的请求
         fetcher.sendFetches();
 
         // We do not want to be stuck blocking in poll if we are missing some positions
@@ -1324,6 +1345,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
      * @throws org.apache.kafka.common.errors.TimeoutException if the timeout specified by {@code default.api.timeout.ms} expires
      *            before successful completion of the offset commit
      */
+    // 同步提交offset
     @Override
     public void commitSync() {
         commitSync(Duration.ofMillis(defaultApiTimeoutMs));
@@ -1358,6 +1380,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
      * @throws org.apache.kafka.common.errors.TimeoutException if the timeout expires before successful completion
      *            of the offset commit
      */
+    // 同步提交offset
     @Override
     public void commitSync(Duration timeout) {
         acquireAndEnsureOpen();
@@ -1404,6 +1427,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
      * @throws org.apache.kafka.common.errors.TimeoutException if the timeout expires before successful completion
      *            of the offset commit
      */
+    // 同步提交offset
     @Override
     public void commitSync(final Map<TopicPartition, OffsetAndMetadata> offsets) {
         commitSync(offsets, Duration.ofMillis(defaultApiTimeoutMs));
@@ -1482,6 +1506,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
      *
      * @param callback Callback to invoke when the commit completes
      */
+    // 异步提交offset操作
     @Override
     public void commitAsync(OffsetCommitCallback callback) {
         acquireAndEnsureOpen();
@@ -1512,13 +1537,18 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
      *                is safe to mutate the map after returning.
      * @param callback Callback to invoke when the commit completes
      */
+    // 异步提交offset
     @Override
     public void commitAsync(final Map<TopicPartition, OffsetAndMetadata> offsets, OffsetCommitCallback callback) {
         acquireAndEnsureOpen();
         try {
+            // 必须有groupId
             maybeThrowInvalidGroupIdException();
             log.debug("Committing offsets: {}", offsets);
+            // 更新为罪行的 epoch
             offsets.forEach(this::updateLastSeenEpochIfNewer);
+            // 提交,可以看到 offset由 协调器来提交
+            // ---  ----
             coordinator.commitOffsetsAsync(new HashMap<>(offsets), callback);
         } finally {
             release();

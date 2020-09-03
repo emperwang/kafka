@@ -69,6 +69,7 @@ public class Timer {
      *
      * @return true if the timer has expired, false otherwise
      */
+    // 是否过期,即 当前时间是否大于 deadline
     public boolean isExpired() {
         return currentTimeMs >= deadlineMs;
     }
@@ -77,6 +78,7 @@ public class Timer {
      * Check whether the timer has not yet expired.
      * @return true if there is still time remaining before expiration
      */
+    // 没有过期返回 true
     public boolean notExpired() {
         return !isExpired();
     }
@@ -100,6 +102,7 @@ public class Timer {
      *
      * @param timeoutMs The new timeout in milliseconds
      */
+    // 重新设置 deadLine 时间
     public void reset(long timeoutMs) {
         if (timeoutMs < 0)
             throw new IllegalArgumentException("Invalid negative timeout " + timeoutMs);
@@ -117,6 +120,7 @@ public class Timer {
      * the underlying time returns a value which is smaller than the current cached time,
      * the update will be ignored.
      */
+    // 更新当前时间
     public void update() {
         update(time.milliseconds());
     }
@@ -130,6 +134,7 @@ public class Timer {
      *
      * @param currentTimeMs The current time in milliseconds to cache
      */
+    // 更新当前时间
     public void update(long currentTimeMs) {
         this.currentTimeMs = Math.max(currentTimeMs, this.currentTimeMs);
     }

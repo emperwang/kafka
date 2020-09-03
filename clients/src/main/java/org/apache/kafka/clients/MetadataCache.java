@@ -39,13 +39,15 @@ import java.util.stream.Collectors;
  */
 class MetadataCache {
     private final String clusterId;
+    // 各个节点
     private final List<Node> nodes;
     private final Set<String> unauthorizedTopics;
     private final Set<String> invalidTopics;
     private final Set<String> internalTopics;
+    // 控制器
     private final Node controller;
     private final Map<TopicPartition, PartitionInfoAndEpoch> metadataByPartition;
-
+    // 集群信息
     private Cluster clusterInstance;
 
     MetadataCache(String clusterId,

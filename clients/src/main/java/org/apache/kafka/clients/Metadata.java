@@ -73,6 +73,7 @@ public class Metadata implements Closeable {
     private long lastSuccessfulRefreshMs;
     private AuthenticationException authenticationException;
     private MetadataCache cache = MetadataCache.empty();
+    // 是否需要更新 metadata
     private boolean needUpdate;
     /* Topics with expiry time */
     private final Map<String, Long> topics;
@@ -313,10 +314,15 @@ public class Metadata implements Closeable {
     }
 
     public synchronized void bootstrap(List<InetSocketAddress> addresses, long now) {
+        // 是否需要更新
         this.needUpdate = true;
+        // 上次更新时间
         this.lastRefreshMs = now;
+        // 成功更新时间
         this.lastSuccessfulRefreshMs = now;
+        // 更新版本
         this.updateVersion += 1;
+        // 缓存的集群信息
         this.cache = MetadataCache.bootstrap(addresses);
     }
 

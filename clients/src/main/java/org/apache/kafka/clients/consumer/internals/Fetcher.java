@@ -123,6 +123,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
     private final Metadata metadata;
     private final FetchManagerMetrics sensors;
     private final SubscriptionState subscriptions;
+    // 记录 getch 到的 record
     private final ConcurrentLinkedQueue<CompletedFetch> completedFetches;
     private final BufferSupplier decompressionBufferSupplier = BufferSupplier.create();
     private final Deserializer<K> keyDeserializer;
@@ -203,11 +204,15 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
      * an in-flight fetch or pending fetch data.
      * @return number of fetches sent
      */
+    // 发送拉取数据的请求到node
     public synchronized int sendFetches() {
+        // 准备  request
         Map<Node, FetchSessionHandler.FetchRequestData> fetchRequestMap = prepareFetchRequests();
         for (Map.Entry<Node, FetchSessionHandler.FetchRequestData> entry : fetchRequestMap.entrySet()) {
+            // 要发送的目标
             final Node fetchTarget = entry.getKey();
             final FetchSessionHandler.FetchRequestData data = entry.getValue();
+            // 创建 request
             final FetchRequest.Builder request = FetchRequest.Builder
                     .forConsumer(this.maxWaitMs, this.minBytes, data.toSend())
                     .isolationLevel(isolationLevel)
@@ -217,6 +222,8 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
             if (log.isDebugEnabled()) {
                 log.debug("Sending {} {} to broker {}", isolationLevel, data.toString(), fetchTarget);
             }
+            // 发送 request 到 fetchTarget
+            // 并添加了一个 回调函数,处理发送成功 和 失败的情况
             client.send(fetchTarget, request)
                     .addListener(new RequestFutureListener<ClientResponse>() {
                         @Override
@@ -244,6 +251,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
 
                                     log.debug("Fetch {} at offset {} for partition {} returned fetch data {}",
                                             isolationLevel, fetchOffset, partition, fetchData);
+                                    // 记录fetch到的数据
                                     completedFetches.add(new CompletedFetch(partition, fetchOffset, fetchData, metricAggregator,
                                             resp.requestHeader().apiVersion()));
                                 }
@@ -488,6 +496,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                     if (completedFetch == null) break;
 
                     try {
+                        // 解析已经fetch到的  record
                         nextInLineRecords = parseCompletedFetch(completedFetch);
                     } catch (Exception e) {
                         // Remove a completedFetch upon a parse with exception if (1) it contains no records, and
@@ -501,6 +510,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                         }
                         throw e;
                     }
+                    // 记录已经 fetch 到的  record
                     completedFetches.poll();
                 } else {
                     List<ConsumerRecord<K, V>> records = fetchRecords(nextInLineRecords, recordsRemaining);
@@ -867,6 +877,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
      * Create fetch requests for all nodes for which we have assigned partitions
      * that have no existing requests in flight.
      */
+    // 创建 拉取数据的request
     private Map<Node, FetchSessionHandler.FetchRequestData> prepareFetchRequests() {
         Map<Node, FetchSessionHandler.Builder> fetchable = new LinkedHashMap<>();
         for (TopicPartition partition : fetchablePartitions()) {
@@ -1224,7 +1235,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
                 }
             }
         }
-
+        // 拉取消息
         private List<ConsumerRecord<K, V>> fetchRecords(int maxRecords) {
             // Error when fetching the next record before deserialization.
             if (corruptLastRecord)

@@ -28,6 +28,7 @@ public class ByteBufferSend implements Send {
 
     private final String destination;
     private final int size;
+    // 存储数据
     protected final ByteBuffer[] buffers;
     private int remaining;
     private boolean pending = false;
@@ -54,13 +55,15 @@ public class ByteBufferSend implements Send {
     public long size() {
         return this.size;
     }
-
+    // 把数据写出到 channel中
     @Override
     public long writeTo(GatheringByteChannel channel) throws IOException {
+        // 把buffer中的数据 写入到 channel中
         long written = channel.write(buffers);
         if (written < 0)
             throw new EOFException("Wrote negative bytes to channel. This shouldn't happen.");
         remaining -= written;
+        // 查看 此 channel 是否有待发送的数据
         pending = TransportLayers.hasPendingWrites(channel);
         return written;
     }

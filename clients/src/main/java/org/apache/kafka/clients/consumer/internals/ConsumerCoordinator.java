@@ -578,11 +578,13 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             completion.invoke();
         }
     }
-
+    // 异步提交offset
     public void commitOffsetsAsync(final Map<TopicPartition, OffsetAndMetadata> offsets, final OffsetCommitCallback callback) {
         invokeCompletedOffsetCommitCallbacks();
 
         if (!coordinatorUnknown()) {
+            // --- 重点 ----
+            // 这里发送了一次  OffsetCommitRequest到 协调器 coordinator
             doCommitOffsetsAsync(offsets, callback);
         } else {
             // we don't know the current coordinator, so try to find it and then send the commit
@@ -612,12 +614,17 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         // ensure the commit has a chance to be transmitted (without blocking on its completion).
         // Note that commits are treated as heartbeats by the coordinator, so there is no need to
         // explicitly allow heartbeats through delayed task execution.
+        // 立即执行一次 IO 操作
+        // 也就是 对channel的读取操作
         client.pollNoWakeup();
     }
-
+    // 异步提交 offset
     private void doCommitOffsetsAsync(final Map<TopicPartition, OffsetAndMetadata> offsets, final OffsetCommitCallback callback) {
+        // 发送 OffsetCommitRequest 到 coordinator
+        // ---  重点  ---
         RequestFuture<Void> future = sendOffsetCommitRequest(offsets);
         final OffsetCommitCallback cb = callback == null ? defaultOffsetCommitCallback : callback;
+        // 添加 回调函数
         future.addListener(new RequestFutureListener<Void>() {
             @Override
             public void onSuccess(Void value) {
@@ -647,34 +654,39 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
      * @return If the offset commit was successfully sent and a successful response was received from
      *         the coordinator
      */
+    // 同步提交 offset 操作
     public boolean commitOffsetsSync(Map<TopicPartition, OffsetAndMetadata> offsets, Timer timer) {
         invokeCompletedOffsetCommitCallbacks();
-
+        // 如果offset 参数为空,直接返回
         if (offsets.isEmpty())
             return true;
 
         do {
+            // coordinator 协调器不知
+            // 如果 coordinator unknown,且没有找到 FindCoordinatorRequest,则返回false, 表示提交失败
             if (coordinatorUnknown() && !ensureCoordinatorReady(timer)) {
                 return false;
             }
-
+            // 发送一个 OffsetCommitRequest的请求
             RequestFuture<Void> future = sendOffsetCommitRequest(offsets);
+            // 这里紧接着就进行 io 操作,保证请求能 输出出去
             client.poll(future, timer);
 
             // We may have had in-flight offset commits when the synchronous commit began. If so, ensure that
             // the corresponding callbacks are invoked prior to returning in order to preserve the order that
             // the offset commits were applied.
+            // 调用 完成offset 提交的回调函数
             invokeCompletedOffsetCommitCallbacks();
-
+            // 提交完成, 调用拦截器对 offset 进行处理
             if (future.succeeded()) {
                 if (interceptors != null)
                     interceptors.onCommit(offsets);
                 return true;
             }
-
+            // 如果失败了, 并且不能再次请求,则抛出异常
             if (future.failed() && !future.isRetriable())
                 throw future.exception();
-
+            // 睡眠 retryBackoffMs 毫秒, 避免持续请求
             timer.sleep(retryBackoffMs);
         } while (timer.notExpired());
 
@@ -747,15 +759,18 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
      * @param offsets The list of offsets per partition that should be committed.
      * @return A request future whose value indicates whether the commit was successful or not
      */
+    // 发送一个 offsetCommitRequest 到 coordinator
     private RequestFuture<Void> sendOffsetCommitRequest(final Map<TopicPartition, OffsetAndMetadata> offsets) {
         if (offsets.isEmpty())
             return RequestFuture.voidSuccess();
-
+        // 检测 并 获取到 coordinator 对应的node
         Node coordinator = checkAndGetCoordinator();
+        // 如果没有 协调器,则直接返回
         if (coordinator == null)
             return RequestFuture.coordinatorNotAvailable();
 
         // create the offset commit request
+        // 创建 offset commit request
         Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = new HashMap<>(offsets.size());
         for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : offsets.entrySet()) {
             OffsetAndMetadata offsetAndMetadata = entry.getValue();
@@ -777,13 +792,14 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             }
         } else
             generation = Generation.NO_GENERATION;
-
+        // 创建一个 OffsetCommitRequest builder
         OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(this.groupId, offsetData).
                 setGenerationId(generation.generationId).
                 setMemberId(generation.memberId);
 
         log.trace("Sending OffsetCommit request with {} to coordinator {}", offsets, coordinator);
-
+        // 发送提交请求
+        // 注册一个回调函数 OffsetCommitResponseHandler
         return client.send(coordinator, builder)
                 .compose(new OffsetCommitResponseHandler(offsets));
     }

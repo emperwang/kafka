@@ -93,6 +93,7 @@ public final class ClientUtils {
      * @param config client configs
      * @return configured ChannelBuilder based on the configs.
      */
+    // 创建channel的 factory类
     public static ChannelBuilder createChannelBuilder(AbstractConfig config, Time time) {
         SecurityProtocol securityProtocol = SecurityProtocol.forName(config.getString(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG));
         String clientSaslMechanism = config.getString(SaslConfigs.SASL_MECHANISM);

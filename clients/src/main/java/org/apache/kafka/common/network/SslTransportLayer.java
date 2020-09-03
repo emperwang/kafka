@@ -67,6 +67,7 @@ public class SslTransportLayer implements TransportLayer {
     private ByteBuffer netReadBuffer;
     private ByteBuffer netWriteBuffer;
     private ByteBuffer appReadBuffer;
+    // 是否有缓存的数据
     private boolean hasBytesBuffered;
     private ByteBuffer emptyBuf = ByteBuffer.allocate(0);
 
@@ -883,7 +884,7 @@ public class SslTransportLayer implements TransportLayer {
     public boolean isMute() {
         return key.isValid() && (key.interestOps() & SelectionKey.OP_READ) == 0;
     }
-
+    // 是否有缓存的数据
     @Override
     public boolean hasBytesBuffered() {
         return hasBytesBuffered;

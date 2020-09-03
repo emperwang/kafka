@@ -87,7 +87,9 @@ public class ConsumerNetworkClient implements Closeable {
                                  int requestTimeoutMs,
                                  int maxPollTimeoutMs) {
         this.log = logContext.logger(ConsumerNetworkClient.class);
+        // 此client 是封装了 networkIO的真实操作
         this.client = client;
+        //
         this.metadata = metadata;
         this.time = time;
         this.retryBackoffMs = retryBackoffMs;
@@ -99,7 +101,10 @@ public class ConsumerNetworkClient implements Closeable {
     /**
      * Send a request with the default timeout. See {@link #send(Node, AbstractRequest.Builder, int)}.
      */
+    // 发送请求到 node
     public RequestFuture<ClientResponse> send(Node node, AbstractRequest.Builder<?> requestBuilder) {
+        // 发送请求
+        // requestTimeoutMs 表示请求的超时时间
         return send(node, requestBuilder, requestTimeoutMs);
     }
 
@@ -118,23 +123,32 @@ public class ConsumerNetworkClient implements Closeable {
      *                         for any reason.
      * @return A future which indicates the result of the send.
      */
+    // 发送请求
     public RequestFuture<ClientResponse> send(Node node,
                                               AbstractRequest.Builder<?> requestBuilder,
                                               int requestTimeoutMs) {
+        // 当前时间
         long now = time.milliseconds();
         RequestFutureCompletionHandler completionHandler = new RequestFutureCompletionHandler();
+        // 创建一个 ClientRequest
         ClientRequest clientRequest = client.newClientRequest(node.idString(), requestBuilder, now, true,
                 requestTimeoutMs, completionHandler);
+        // 记录到 unsent 容器中
+        // 就是此 node 对应了一个 等待发送的 请求
         unsent.put(node, clientRequest);
 
         // wakeup the client in case it is blocking in poll so that we can send the queued request
+        // 唤醒 client, 让其进行处理
+        // 最后仍然唤醒的是 nioselect
         client.wakeup();
         return completionHandler.future;
     }
-
+    // 查找请求数最下的node
     public Node leastLoadedNode() {
         lock.lock();
         try {
+            // 查找负载最小的node
+            // 即请求数 最小的node
             return client.leastLoadedNode(time.milliseconds());
         } finally {
             lock.unlock();
@@ -155,9 +169,13 @@ public class ConsumerNetworkClient implements Closeable {
      *
      * @return true if update succeeded, false otherwise.
      */
+    // 等待一个 metadata 数据的更新
     public boolean awaitMetadataUpdate(Timer timer) {
+        // 这里发送请求
+        // ???  没有看到  ???
         int version = this.metadata.requestUpdate();
         do {
+            // 保证清除的输出
             poll(timer);
             AuthenticationException ex = this.metadata.getAndClearAuthenticationException();
             if (ex != null)
@@ -210,6 +228,8 @@ public class ConsumerNetworkClient implements Closeable {
      * @throws WakeupException if {@link #wakeup()} is called from another thread
      * @throws InterruptException if the calling thread is interrupted
      */
+    // 此操作相当于是一个为某个请求的特定操作
+    // 如:FindCoordinatorRequest 请求发送时,会调用此函数, 以此来保证此请求能快速发送出去
     public boolean poll(RequestFuture<?> future, Timer timer) {
         do {
             poll(timer, future);
@@ -232,6 +252,7 @@ public class ConsumerNetworkClient implements Closeable {
      * @param timer Timer bounding how long this method can block
      * @param pollCondition Nullable blocking condition
      */
+    // network io 的真正操作
     public void poll(Timer timer, PollCondition pollCondition) {
         poll(timer, pollCondition, false);
     }
@@ -242,6 +263,8 @@ public class ConsumerNetworkClient implements Closeable {
      * @param pollCondition Nullable blocking condition
      * @param disableWakeup If TRUE disable triggering wake-ups
      */
+    // poll一次,查看是否有network IO 操作,如果有则进行
+    // 也就是进行一次 数据发送 和 接收操作
     public void poll(Timer timer, PollCondition pollCondition, boolean disableWakeup) {
         // there may be handlers which need to be invoked if we woke up the previous call to poll
         firePendingCompletedRequests();
@@ -249,9 +272,12 @@ public class ConsumerNetworkClient implements Closeable {
         lock.lock();
         try {
             // Handle async disconnects prior to attempting any sends
+            // 优先处理那些等待 断开连接的操作
             handlePendingDisconnects();
 
             // send all the requests we can send now
+            // --- 重点 ---
+            // 发送那些等待发送的请求
             long pollDelayMs = trySend(timer.currentTimeMs());
 
             // check whether the poll is still needed by the caller. Note that if the expected completion
@@ -264,8 +290,11 @@ public class ConsumerNetworkClient implements Closeable {
                     pollTimeout = Math.min(pollTimeout, retryBackoffMs);
                 client.poll(pollTimeout, timer.currentTimeMs());
             } else {
+                // 主要就是在这里 进行一些 network IO 的操作
+                // 真正进行 network IO 操作的地方
                 client.poll(0, timer.currentTimeMs());
             }
+            // timer 时间更新
             timer.update();
 
             // handle any disconnects by failing the active requests. note that disconnects must
@@ -300,6 +329,7 @@ public class ConsumerNetworkClient implements Closeable {
     /**
      * Poll for network IO and return immediately. This will not trigger wakeups.
      */
+    // 立即进行一次poll操作, 并且立即返回, 没有等待
     public void pollNoWakeup() {
         poll(time.timer(0), null, true);
     }
@@ -459,19 +489,24 @@ public class ConsumerNetworkClient implements Closeable {
             lock.unlock();
         }
     }
-
+    // 尝试发送那些 等待发送的请求
     private long trySend(long now) {
         long pollDelayMs = maxPollTimeoutMs;
 
         // send any requests that can be sent now
+        // 遍历 所有 有请求等待发送的 node
         for (Node node : unsent.nodes()) {
+            // 获取到 此 node 对应的要发送的请求
             Iterator<ClientRequest> iterator = unsent.requestIterator(node);
             if (iterator.hasNext())
                 pollDelayMs = Math.min(pollDelayMs, client.pollDelayMs(node, now));
-
+            // 遍历等待的请求
             while (iterator.hasNext()) {
                 ClientRequest request = iterator.next();
+                // ready 意思 是否和 node建立好了连接,没有建立好连接,则尝试建立一个连接
+                // -- 重点 --
                 if (client.ready(node, now)) {
+                    // 发送请求
                     client.send(request, now);
                     iterator.remove();
                 }
@@ -608,12 +643,13 @@ public class ConsumerNetworkClient implements Closeable {
      * A thread-safe helper class to hold requests per node that have not been sent yet
      */
     private final static class UnsentRequests {
+        // 记录每一个node 对应的要 发送的  请求
         private final ConcurrentMap<Node, ConcurrentLinkedQueue<ClientRequest>> unsent;
 
         private UnsentRequests() {
             unsent = new ConcurrentHashMap<>();
         }
-
+        // 记录 request到 node对应的容器
         public void put(Node node, ClientRequest request) {
             // the lock protects the put from a concurrent removal of the queue for the node
             synchronized (unsent) {
@@ -693,7 +729,7 @@ public class ConsumerNetworkClient implements Closeable {
             ConcurrentLinkedQueue<ClientRequest> requests = unsent.get(node);
             return requests == null ? Collections.<ClientRequest>emptyIterator() : requests.iterator();
         }
-
+        // 获取到有请求等待发送的 node
         public Collection<Node> nodes() {
             return unsent.keySet();
         }

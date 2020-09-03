@@ -64,6 +64,7 @@ public class ChannelBuilders {
             if (clientSaslMechanism == null)
                 throw new IllegalArgumentException("`clientSaslMechanism` must be non-null in client mode if `securityProtocol` is `" + securityProtocol + "`");
         }
+        // 创建不同的 channel factory 
         return create(securityProtocol, Mode.CLIENT, contextType, config, listenerName, false, clientSaslMechanism,
                 saslHandshakeRequestEnable, null, null, time);
     }

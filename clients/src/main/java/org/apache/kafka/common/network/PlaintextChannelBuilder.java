@@ -47,12 +47,16 @@ public class PlaintextChannelBuilder implements ChannelBuilder {
     public void configure(Map<String, ?> configs) throws KafkaException {
         this.configs = configs;
     }
-
+    // 创建 KafkaChannel, 并创建了真正的传输层 transportLayer
+    // transportLayer 是真正传输数据的操作层
     @Override
     public KafkaChannel buildChannel(String id, SelectionKey key, int maxReceiveSize, MemoryPool memoryPool) throws KafkaException {
         try {
+            // 真正的传输层
             PlaintextTransportLayer transportLayer = new PlaintextTransportLayer(key);
+            // 认证提供者
             Supplier<Authenticator> authenticatorCreator = () -> new PlaintextAuthenticator(configs, transportLayer, listenerName);
+            // 创建一个 kafkaChannel 并返回
             return new KafkaChannel(id, transportLayer, authenticatorCreator, maxReceiveSize,
                     memoryPool != null ? memoryPool : MemoryPool.NONE);
         } catch (Exception e) {

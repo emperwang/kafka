@@ -122,6 +122,7 @@ public class KafkaChannel implements AutoCloseable {
     private final int maxReceiveSize;
     private final MemoryPool memoryPool;
     private NetworkReceive receive;
+    // 要发送的数据
     private Send send;
     // Track connection and mute state of channels to enable outstanding requests on channels to be
     // processed after the channel is disconnected.
@@ -134,20 +135,33 @@ public class KafkaChannel implements AutoCloseable {
     private long lastReauthenticationStartNanos;
 
     public KafkaChannel(String id, TransportLayer transportLayer, Supplier<Authenticator> authenticatorCreator, int maxReceiveSize, MemoryPool memoryPool) {
+        // nodeid 或 connectionid
         this.id = id;
+        // 发送层
         this.transportLayer = transportLayer;
+        // 认证提供者,也就是会创建一个用于认证的类
         this.authenticatorCreator = authenticatorCreator;
+        // 认证类
         this.authenticator = authenticatorCreator.get();
+        //
         this.networkThreadTimeNanos = 0L;
+        // 最大接收的大小
         this.maxReceiveSize = maxReceiveSize;
+        //  内存池
         this.memoryPool = memoryPool;
         this.disconnected = false;
+        // 是否被 mute
         this.muteState = ChannelMuteState.NOT_MUTED;
+        // 当前 channel的状态
         this.state = ChannelState.NOT_CONNECTED;
     }
-
+    // 关闭操作
     public void close() throws IOException {
+        // 记录失去连接的状态
         this.disconnected = true;
+        // 并此 kafkaChannel 封装的 transportLayer  authenticator   receive 关闭这里资源
+        // 其中transportLayer 就关闭了socket 以及 socketChannel的连接
+        // receive的关闭操作 回收存储接收数据的buffer, 其真正的回收依赖于gc,增加可用内存数
         Utils.closeAll(transportLayer, authenticator, receive);
     }
 
@@ -188,13 +202,14 @@ public class KafkaChannel implements AutoCloseable {
             state = ChannelState.READY;
         }
     }
-
+    // 断开连接
     public void disconnect() {
         disconnected = true;
         if (state == ChannelState.NOT_CONNECTED && remoteAddress != null) {
             //if we captured the remote address we can provide more information
             state = new ChannelState(ChannelState.State.NOT_CONNECTED, remoteAddress.toString());
         }
+        // 调用key的 cancel操作, 下次 nioselect 操作时,就会移除此key
         transportLayer.disconnect();
     }
 
@@ -205,14 +220,16 @@ public class KafkaChannel implements AutoCloseable {
     public ChannelState state() {
         return this.state;
     }
-
+    // channel 是否完成了 连接
     public boolean finishConnect() throws IOException {
         //we need to grab remoteAddr before finishConnect() is called otherwise
         //it becomes inaccessible if the connection was refused.
+        // 获取 此kafkaChannel 包装的 socketChannel
         SocketChannel socketChannel = transportLayer.socketChannel();
         if (socketChannel != null) {
             remoteAddress = socketChannel.getRemoteAddress();
         }
+        // channel 是否连接成功了
         boolean connected = transportLayer.finishConnect();
         if (connected) {
             if (ready()) {
@@ -241,6 +258,7 @@ public class KafkaChannel implements AutoCloseable {
     /**
      * externally muting a channel should be done via selector to ensure proper state handling
      */
+    // 把自己 禁止  mute
     void mute() {
         if (muteState == ChannelMuteState.NOT_MUTED) {
             if (!disconnected) transportLayer.removeInterestOps(SelectionKey.OP_READ);
@@ -342,7 +360,7 @@ public class KafkaChannel implements AutoCloseable {
         //also cannot mute if underlying transport is not in the ready state
         return transportLayer.ready();
     }
-
+    // 是否ready
     public boolean ready() {
         return transportLayer.ready() && authenticator.complete();
     }
@@ -367,35 +385,41 @@ public class KafkaChannel implements AutoCloseable {
             return socket.getLocalAddress().toString();
         return socket.getInetAddress().toString();
     }
-
+    // 记录下要发送的数据
     public void setSend(Send send) {
         if (this.send != null)
             throw new IllegalStateException("Attempt to begin a send operation with prior send operation still in progress, connection id is " + id);
+        // 记录要发送的数据
         this.send = send;
         this.transportLayer.addInterestOps(SelectionKey.OP_WRITE);
     }
-
+    // 读取数据
     public NetworkReceive read() throws IOException {
         NetworkReceive result = null;
-
+        // 接收数据的容器
         if (receive == null) {
             receive = new NetworkReceive(maxReceiveSize, id, memoryPool);
         }
-
+        // 开始读取数据
         receive(receive);
         if (receive.complete()) {
             receive.payload().rewind();
             result = receive;
             receive = null;
+            // 到这里,说明 receive没有分配到内存,则把自己 mute掉
         } else if (receive.requiredMemoryAmountKnown() && !receive.memoryAllocated() && isInMutableState()) {
             //pool must be out of memory, mute ourselves.
+            // 如果没有分配到内存,
             mute();
         }
+        // 返回 接收到数据的 receive
         return result;
     }
-
+    // 发送数据
     public Send write() throws IOException {
         Send result = null;
+        // 如果此channel中send 不为null,则说明有数据要发送
+        // 那么就进行数据的发送
         if (send != null && send(send)) {
             result = send;
             send = null;
@@ -419,16 +443,19 @@ public class KafkaChannel implements AutoCloseable {
         networkThreadTimeNanos = 0;
         return current;
     }
-
+    // 开始接收数据,从 transportLayer 中读取数据
     private long receive(NetworkReceive receive) throws IOException {
         return receive.readFrom(transportLayer);
     }
-
+    // 发送数据
+    // ---- 重点 ---
     private boolean send(Send send) throws IOException {
         midWrite = true;
+        // 数据的发送
         send.writeTo(transportLayer);
         if (send.completed()) {
             midWrite = false;
+            // 发送完成后,去除OP_WRITE 事件
             transportLayer.removeInterestOps(SelectionKey.OP_WRITE);
         }
         return send.completed();
@@ -437,6 +464,7 @@ public class KafkaChannel implements AutoCloseable {
     /**
      * @return true if underlying transport has bytes remaining to be read from any underlying intermediate buffers.
      */
+    // 查看此 kafakChannel对应的channel中是否有缓存的数据
     public boolean hasBytesBuffered() {
         return transportLayer.hasBytesBuffered();
     }

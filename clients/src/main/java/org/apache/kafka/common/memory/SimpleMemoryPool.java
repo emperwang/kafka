@@ -36,6 +36,7 @@ public class SimpleMemoryPool implements MemoryPool {
     protected final boolean strict;
     protected final AtomicLong availableMemory;
     protected final int maxSingleAllocationSize;
+    // 记录 开始没有内存可用,即拒绝内存分配的时间
     protected final AtomicLong startOfNoMemPeriod = new AtomicLong(); //nanoseconds
     protected volatile Sensor oomTimeSensor;
 
@@ -49,7 +50,7 @@ public class SimpleMemoryPool implements MemoryPool {
         this.maxSingleAllocationSize = maxSingleAllocationBytes;
         this.oomTimeSensor = oomPeriodSensor;
     }
-
+    // 分配缓存
     @Override
     public ByteBuffer tryAllocate(int sizeBytes) {
         if (sizeBytes < 1)
@@ -78,19 +79,21 @@ public class SimpleMemoryPool implements MemoryPool {
             log.trace("refused to allocate buffer of size {}", sizeBytes);
             return null;
         }
-
+        // 分配一个缓存
         ByteBuffer allocated = ByteBuffer.allocate(sizeBytes);
         bufferToBeReturned(allocated);
         return allocated;
     }
-
+    // 回收内存
     @Override
     public void release(ByteBuffer previouslyAllocated) {
         if (previouslyAllocated == null)
             throw new IllegalArgumentException("provided null buffer");
-
+        // 内有具体的操作,可见此处的 内存回收,依赖于 gc
         bufferToBeReleased(previouslyAllocated);
+        // 增大可用内存大的数量
         availableMemory.addAndGet(previouslyAllocated.capacity());
+        // 记录 拒绝内存分配的时间
         maybeRecordEndOfDrySpell();
     }
 
@@ -124,11 +127,13 @@ public class SimpleMemoryPool implements MemoryPool {
         long allocated = sizeBytes - availableMemory.get();
         return "SimpleMemoryPool{" + Utils.formatBytes(allocated) + "/" + Utils.formatBytes(sizeBytes) + " used}";
     }
-
+    // 记录 拒绝内存分配的时间
     protected void maybeRecordEndOfDrySpell() {
         if (oomTimeSensor != null) {
+            // 获取拒绝内存分配的开始时间
             long startOfDrySpell = startOfNoMemPeriod.getAndSet(0);
             if (startOfDrySpell != 0) {
+                // 记录 拒绝了多长时间的内存分配
                 //how long were we refusing allocation requests for
                 oomTimeSensor.record((System.nanoTime() - startOfDrySpell) / 1000000.0); //fractional (double) millis
             }

@@ -31,28 +31,34 @@ import java.security.Principal;
 import org.apache.kafka.common.security.auth.KafkaPrincipal;
 
 public class PlaintextTransportLayer implements TransportLayer {
+    // 记录 事件key
     private final SelectionKey key;
     private final SocketChannel socketChannel;
     private final Principal principal = KafkaPrincipal.ANONYMOUS;
 
     public PlaintextTransportLayer(SelectionKey key) throws IOException {
+        // 记录事件key
         this.key = key;
+        // 记录key 上attach 的 channel
         this.socketChannel = (SocketChannel) key.channel();
     }
-
+    // 是否 ready, 默认为 true
     @Override
     public boolean ready() {
         return true;
     }
-
+    // 是否完成了连接
     @Override
     public boolean finishConnect() throws IOException {
+        // 查看channel 是否完成了 连接
         boolean connected = socketChannel.finishConnect();
+        // 如果完成了连接,则更改 感兴趣的 事件为 OP_READ
+        // 并 去除 OP_CONNECT 事件
         if (connected)
             key.interestOps(key.interestOps() & ~SelectionKey.OP_CONNECT | SelectionKey.OP_READ);
         return connected;
     }
-
+    // 断开连接, 调用key的 cancel, 下次select 操作时,就会移除此key
     @Override
     public void disconnect() {
         key.cancel();
@@ -77,7 +83,7 @@ public class PlaintextTransportLayer implements TransportLayer {
     public boolean isConnected() {
         return socketChannel.isConnected();
     }
-
+    // socket 以及 socketChannel的关闭
     @Override
     public void close() throws IOException {
         socketChannel.socket().close();
@@ -98,8 +104,10 @@ public class PlaintextTransportLayer implements TransportLayer {
     * @return The number of bytes read, possible zero or -1 if the channel has reached end-of-stream
     * @throws IOException if some other I/O error occurs
     */
+    // 从channel中读取数据
     @Override
     public int read(ByteBuffer dst) throws IOException {
+        // 读取数据到 此  dst  buffer中
         return socketChannel.read(dst);
     }
 
@@ -147,8 +155,10 @@ public class PlaintextTransportLayer implements TransportLayer {
     * @return The number of bytes read, possibly zero, or -1 if the channel has reached end-of-stream
     * @throws IOException If some other I/O error occurs
     */
+    // 发送数据到 channel中
     @Override
     public long write(ByteBuffer[] srcs) throws IOException {
+        // 把srcs中的数据 写入到 socketChannel中
         return socketChannel.write(srcs);
     }
 
@@ -186,6 +196,7 @@ public class PlaintextTransportLayer implements TransportLayer {
     /**
      * Adds the interestOps to selectionKey.
      */
+    // 增加感兴趣的事件 ops
     @Override
     public void addInterestOps(int ops) {
         key.interestOps(key.interestOps() | ops);
@@ -195,6 +206,7 @@ public class PlaintextTransportLayer implements TransportLayer {
     /**
      * Removes the interestOps from selectionKey.
      */
+    // 移除 读事件
     @Override
     public void removeInterestOps(int ops) {
         key.interestOps(key.interestOps() & ~ops);

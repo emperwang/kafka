@@ -226,19 +226,23 @@ public abstract class AbstractCoordinator implements Closeable {
      * @param timer Timer bounding how long this method can block
      * @return true If coordinator discovery and initial connection succeeded, false otherwise
      */
+    // 保证查找到  coordinator
     protected synchronized boolean ensureCoordinatorReady(final Timer timer) {
         if (!coordinatorUnknown())
             return true;
 
         do {
+            // 这里发送一个 FindCoordinatorRequest 请求到负载最小的node上
+            // 返回一个future,等待完成
             final RequestFuture<Void> future = lookupCoordinator();
+            // network io 操作,把刚才的 FindCoordinatorRequest 请求发送出去
             client.poll(future, timer);
-
+            // 如果完成了,则退出
             if (!future.isDone()) {
                 // ran out of time
                 break;
             }
-
+            // 如果失败了,则更新
             if (future.failed()) {
                 if (future.isRetriable()) {
                     log.debug("Coordinator discovery failed, refreshing metadata");
@@ -248,22 +252,26 @@ public abstract class AbstractCoordinator implements Closeable {
             } else if (coordinator != null && client.isUnavailable(coordinator)) {
                 // we found the coordinator, but the connection has failed, so mark
                 // it dead and backoff before retrying discovery
+                // 如果 coordinator 不可达,则标记位 unknown
                 markCoordinatorUnknown();
+                // 睡眠一下, 再次重试
                 timer.sleep(retryBackoffMs);
             }
         } while (coordinatorUnknown() && timer.notExpired());
 
         return !coordinatorUnknown();
     }
-
+    // 查找coordinator  协调器
     protected synchronized RequestFuture<Void> lookupCoordinator() {
         if (findCoordinatorFuture == null) {
             // find a node to ask about the coordinator
+            // 查找负载最小的node
+            // 即请求数 最小的node
             Node node = this.client.leastLoadedNode();
             if (node == null) {
                 log.debug("No broker available to send FindCoordinator request");
                 return RequestFuture.noBrokersAvailable();
-            } else
+            } else  // 向这个node 发送查找Coordinator的请求,即 FindCoordinatorRequest
                 findCoordinatorFuture = sendFindCoordinatorRequest(node);
         }
         return findCoordinatorFuture;
@@ -671,11 +679,13 @@ public abstract class AbstractCoordinator implements Closeable {
      * one of the brokers. The returned future should be polled to get the result of the request.
      * @return A request future which indicates the completion of the metadata request
      */
+    // 查找当前组的 coordinator, 即发送一个 FindCoordinatorRequest 请求到 node
     private RequestFuture<Void> sendFindCoordinatorRequest(Node node) {
         // initiate the group metadata request
         log.debug("Sending FindCoordinator request to broker {}", node);
         FindCoordinatorRequest.Builder requestBuilder =
                 new FindCoordinatorRequest.Builder(FindCoordinatorRequest.CoordinatorType.GROUP, this.groupId);
+        // 发送 FindCoordinatorRequest 请求,查找 coordinator
         return client.send(node, requestBuilder)
                      .compose(new FindCoordinatorResponseHandler());
     }

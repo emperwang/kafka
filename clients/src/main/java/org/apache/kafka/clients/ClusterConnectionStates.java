@@ -38,6 +38,7 @@ final class ClusterConnectionStates {
     private final long reconnectBackoffMaxMs;
     private final static int RECONNECT_BACKOFF_EXP_BASE = 2;
     private final double reconnectBackoffMaxExp;
+    // 记录集群中每个节点的状态
     private final Map<String, NodeConnectionState> nodeState;
     private final Logger log;
 
@@ -115,10 +116,13 @@ final class ClusterConnectionStates {
      * @param host the host of the connection, to be resolved internally if needed
      * @param clientDnsLookup the mode of DNS lookup to use when resolving the {@code host}
      */
+    // 记录一个 node 对应的连接的状态
     public void connecting(String id, long now, String host, ClientDnsLookup clientDnsLookup) {
         NodeConnectionState connectionState = nodeState.get(id);
         if (connectionState != null && connectionState.host().equals(host)) {
+            // 上次建立连接的时间
             connectionState.lastConnectAttemptMs = now;
+            // 当前的连接状态
             connectionState.state = ConnectionState.CONNECTING;
             // Move to next resolved address, or if addresses are exhausted, mark node to be re-resolved
             connectionState.moveToNextAddress();
@@ -129,6 +133,7 @@ final class ClusterConnectionStates {
 
         // Create a new NodeConnectionState if nodeState does not already contain one
         // for the specified id or if the hostname associated with the node id changed.
+        // 记录下 此 node对应的状态
         nodeState.put(id, new NodeConnectionState(ConnectionState.CONNECTING, now,
             this.reconnectBackoffInitMs, host, clientDnsLookup));
     }
