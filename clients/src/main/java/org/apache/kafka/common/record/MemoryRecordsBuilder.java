@@ -107,26 +107,38 @@ public class MemoryRecordsBuilder implements AutoCloseable {
         }
 
         this.magic = magic;
+        // 时间戳类型
         this.timestampType = timestampType;
+        // 压缩类型
         this.compressionType = compressionType;
+        // base 偏移
         this.baseOffset = baseOffset;
         this.logAppendTime = logAppendTime;
+        // 记录个数
         this.numRecords = 0;
         this.uncompressedRecordsSizeInBytes = 0;
+        // 真实压缩比例
         this.actualCompressionRatio = 1;
+        //
         this.maxTimestamp = RecordBatch.NO_TIMESTAMP;
+        // producerId
         this.producerId = producerId;
+        // producer epoch
         this.producerEpoch = producerEpoch;
         this.baseSequence = baseSequence;
         this.isTransactional = isTransactional;
         this.isControlBatch = isControlBatch;
         this.partitionLeaderEpoch = partitionLeaderEpoch;
+        // 最大能写的 字节数
         this.writeLimit = writeLimit;
+        // 开始位置
         this.initialPosition = bufferStream.position();
+        // batchHeader 的size
         this.batchHeaderSizeInBytes = AbstractRecords.recordBatchHeaderSizeInBytes(magic, compressionType);
-
+        // 设置 buffer的 开始位置
         bufferStream.position(initialPosition + batchHeaderSizeInBytes);
         this.bufferStream = bufferStream;
+        // 输出流, 即把数据输出到 buffer中
         this.appendStream = new DataOutputStream(compressionType.wrapForOutput(this.bufferStream, magic));
     }
 
@@ -163,6 +175,7 @@ public class MemoryRecordsBuilder implements AutoCloseable {
                                 boolean isControlBatch,
                                 int partitionLeaderEpoch,
                                 int writeLimit) {
+        // ByteBufferOutputStream(buffer) 输出流, 输出的目的为 buffer
         this(new ByteBufferOutputStream(buffer), magic, compressionType, timestampType, baseOffset, logAppendTime,
                 producerId, producerEpoch, baseSequence, isTransactional, isControlBatch, partitionLeaderEpoch,
                 writeLimit);
@@ -413,7 +426,7 @@ public class MemoryRecordsBuilder implements AutoCloseable {
 
             if (firstTimestamp == null)
                 firstTimestamp = timestamp;
-
+            // 追加记录到  buffer中
             if (magic > RecordBatch.MAGIC_VALUE_V1) {
                 appendDefaultRecord(offset, timestamp, key, value, headers);
                 return null;
@@ -707,6 +720,7 @@ public class MemoryRecordsBuilder implements AutoCloseable {
      * Check if we have room for a new record containing the given key/value pair. If no records have been
      * appended, then this returns true.
      */
+    // 是否还有空间 添加此 记录
     public boolean hasRoomFor(long timestamp, byte[] key, byte[] value, Header[] headers) {
         return hasRoomFor(timestamp, wrapNullable(key), wrapNullable(value), headers);
     }
@@ -737,6 +751,7 @@ public class MemoryRecordsBuilder implements AutoCloseable {
         }
 
         // Be conservative and not take compression of the new record into consideration.
+        // 如果可用的空间 大于 此次要写入的数据大小
         return this.writeLimit >= estimatedBytesWritten() + recordSize;
     }
 

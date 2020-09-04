@@ -38,14 +38,17 @@ public class KafkaThread extends Thread {
         super(name);
         configureThread(name, daemon);
     }
-
+    // 发送的线程
     public KafkaThread(final String name, Runnable runnable, boolean daemon) {
         super(runnable, name);
+        // 对此线程的一个配置
         configureThread(name, daemon);
     }
-
+    // 对线程的配置
     private void configureThread(final String name, boolean daemon) {
+        // 设置是否是 daemon 线程
         setDaemon(daemon);
+        // 设置 未捕获异常处理
         setUncaughtExceptionHandler(new UncaughtExceptionHandler() {
             public void uncaughtException(Thread t, Throwable e) {
                 log.error("Uncaught exception in thread '{}':", name, e);

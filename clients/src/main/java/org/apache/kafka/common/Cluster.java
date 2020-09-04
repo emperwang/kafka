@@ -35,16 +35,26 @@ import java.util.Set;
 public final class Cluster {
 
     private final boolean isBootstrapConfigured;
+    // 集群中所有node 节点
     private final List<Node> nodes;
     private final Set<String> unauthorizedTopics;
+    // 不可用的 topics
     private final Set<String> invalidTopics;
+    // 内部的topic
     private final Set<String> internalTopics;
+    // 控制器 node
     private final Node controller;
+    // topic 和 partition的映射
     private final Map<TopicPartition, PartitionInfo> partitionsByTopicPartition;
+    // topic 对应的分区数
     private final Map<String, List<PartitionInfo>> partitionsByTopic;
+    // 可用的,即此分区是否leader的
     private final Map<String, List<PartitionInfo>> availablePartitionsByTopic;
+    // node的 分区信息
     private final Map<Integer, List<PartitionInfo>> partitionsByNode;
+    // id 和 node之间的映射关系
     private final Map<Integer, Node> nodesById;
+    // 集群资源信息
     private final ClusterResource clusterResource;
 
     /**
@@ -102,12 +112,14 @@ public final class Cluster {
         // make a randomized, unmodifiable copy of the nodes
         List<Node> copy = new ArrayList<>(nodes);
         Collections.shuffle(copy);
+        // 记录下 集群中的node
         this.nodes = Collections.unmodifiableList(copy);
 
         // Index the nodes for quick lookup
         Map<Integer, Node> tmpNodesById = new HashMap<>();
         for (Node node : nodes)
             tmpNodesById.put(node.id(), node);
+        // nodeIde 和 node 之间的映射
         this.nodesById = Collections.unmodifiableMap(tmpNodesById);
 
         // index the partition infos by topic, topic+partition, and node
@@ -123,14 +135,21 @@ public final class Cluster {
                 tmpPartitionsByNode.merge(p.leader().id(), Collections.singletonList(p), Utils::concatListsUnmodifiable);
             }
         }
+        // TopicPartition --> partition
         this.partitionsByTopicPartition = Collections.unmodifiableMap(tmpPartitionsByTopicPartition);
+        // topic --> list(partiotion)
         this.partitionsByTopic = Collections.unmodifiableMap(tmpPartitionsByTopic);
+        // topic --> list(partiotion), 存在leader,可用的
         this.availablePartitionsByTopic = Collections.unmodifiableMap(tmpAvailablePartitionsByTopic);
+        // node 和  partition的映射
         this.partitionsByNode = Collections.unmodifiableMap(tmpPartitionsByNode);
-
+        // 未认证的 topics
         this.unauthorizedTopics = Collections.unmodifiableSet(unauthorizedTopics);
+        // 可不用的 topics
         this.invalidTopics = Collections.unmodifiableSet(invalidTopics);
+        // 内部的topics
         this.internalTopics = Collections.unmodifiableSet(internalTopics);
+        // 控制器
         this.controller = controller;
     }
 
@@ -147,6 +166,7 @@ public final class Cluster {
      * @param addresses The addresses
      * @return A cluster for these hosts/ports
      */
+    // address是bootstrap.servers 的配置值,通过此地址来创建 启动的集群信息
     public static Cluster bootstrap(List<InetSocketAddress> addresses) {
         List<Node> nodes = new ArrayList<>();
         int nodeId = -1;

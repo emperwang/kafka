@@ -48,9 +48,12 @@ public class BufferPool {
     private final long totalMemory;
     private final int poolableSize;
     private final ReentrantLock lock;
+    // 空闲的 buffer
     private final Deque<ByteBuffer> free;
+    //
     private final Deque<Condition> waiters;
     /** Total available memory is the sum of nonPooledAvailableMemory and the number of byte buffers in free * poolableSize.  */
+    // 总内存 减去 分配后的内存 值
     private long nonPooledAvailableMemory;
     private final Metrics metrics;
     private final Time time;
@@ -66,11 +69,16 @@ public class BufferPool {
      * @param metricGrpName logical group name for metrics
      */
     public BufferPool(long memory, int poolableSize, Metrics metrics, Time time, String metricGrpName) {
+        // batch.size  就是 poolableSize
         this.poolableSize = poolableSize;
         this.lock = new ReentrantLock();
+        // 空闲可用的 已分配的缓存
         this.free = new ArrayDeque<>();
+        // 等待分配缓存的 condition
         this.waiters = new ArrayDeque<>();
+        // 总的内存大小
         this.totalMemory = memory;
+        // nonPooledAvailableMemory = 总的内存 - free的大小
         this.nonPooledAvailableMemory = memory;
         this.metrics = metrics;
         this.time = time;
@@ -95,6 +103,7 @@ public class BufferPool {
      * @throws IllegalArgumentException if size is larger than the total memory controlled by the pool (and hence we would block
      *         forever)
      */
+    // 分配内存
     public ByteBuffer allocate(int size, long maxTimeToBlockMs) throws InterruptedException {
         if (size > this.totalMemory)
             throw new IllegalArgumentException("Attempt to allocate " + size
@@ -111,28 +120,37 @@ public class BufferPool {
 
             // now check if the request is immediately satisfiable with the
             // memory on hand or if we need to block
+            // 1. 剩余的 可用的 memory 大小
             int freeListSize = freeSize() * this.poolableSize;
+            // 2. 如果总的内存 可以满足此次请求
             if (this.nonPooledAvailableMemory + freeListSize >= size) {
                 // we have enough unallocated or pooled memory to immediately
                 // satisfy the request, but need to allocate the buffer
+                // 释放一些已经分配的内容,用于满足此次请求
                 freeUp(size);
                 this.nonPooledAvailableMemory -= size;
             } else {
+                // 3. 内存不够, 阻塞
                 // we are out of memory and will have to block
                 int accumulated = 0;
                 Condition moreMemory = this.lock.newCondition();
                 try {
+                    // 剩余阻塞的时间
                     long remainingTimeToBlockNs = TimeUnit.MILLISECONDS.toNanos(maxTimeToBlockMs);
+                    // 记录下 此 condition
                     this.waiters.addLast(moreMemory);
                     // loop over and over until we have a buffer or have reserved
                     // enough memory to allocate one
                     while (accumulated < size) {
+                        // 开始时间
                         long startWaitNs = time.nanoseconds();
                         long timeNs;
                         boolean waitingTimeElapsed;
                         try {
+                            // 3.1 开始超时等待 被唤醒
                             waitingTimeElapsed = !moreMemory.await(remainingTimeToBlockNs, TimeUnit.NANOSECONDS);
                         } finally {
+                            // 被唤醒后  记录结束时间
                             long endWaitNs = time.nanoseconds();
                             timeNs = Math.max(0L, endWaitNs - startWaitNs);
                             recordWaitTime(timeNs);
@@ -146,6 +164,7 @@ public class BufferPool {
 
                         // check if we can satisfy this request from the free list,
                         // otherwise allocate memory
+                        // 3.2 唤醒后 再次尝试查看 内存是否可以满足 此次的请求
                         if (accumulated == 0 && size == this.poolableSize && !this.free.isEmpty()) {
                             // just grab a buffer from the free list
                             buffer = this.free.pollFirst();
@@ -153,9 +172,11 @@ public class BufferPool {
                         } else {
                             // we'll need to allocate memory, but we may only get
                             // part of what we need on this iteration
+                            // 释放部分已分配的内存
                             freeUp(size - accumulated);
                             int got = (int) Math.min(size - accumulated, this.nonPooledAvailableMemory);
                             this.nonPooledAvailableMemory -= got;
+                            // 累加可用的内存
                             accumulated += got;
                         }
                     }
@@ -171,6 +192,7 @@ public class BufferPool {
             // signal any additional waiters if there is more memory left
             // over for them
             try {
+                // 4. 尝试队列中等待内存分配的线程
                 if (!(this.nonPooledAvailableMemory == 0 && this.free.isEmpty()) && !this.waiters.isEmpty())
                     this.waiters.peekFirst().signal();
             } finally {
@@ -178,7 +200,7 @@ public class BufferPool {
                 lock.unlock();
             }
         }
-
+        // 5.分配内存
         if (buffer == null)
             return safeAllocateByteBuffer(size);
         else
@@ -194,9 +216,11 @@ public class BufferPool {
      * Allocate a buffer.  If buffer allocation fails (e.g. because of OOM) then return the size count back to
      * available memory and signal the next waiter if it exists.
      */
+    // 分配内存
     private ByteBuffer safeAllocateByteBuffer(int size) {
         boolean error = true;
         try {
+            // 分配内存
             ByteBuffer buffer = allocateByteBuffer(size);
             error = false;
             return buffer;
@@ -223,6 +247,7 @@ public class BufferPool {
      * Attempt to ensure we have at least the requested number of bytes of memory for allocation by deallocating pooled
      * buffers (if needed)
      */
+    // 释放一些已经分配的内存, 直到可以满足此次请求
     private void freeUp(int size) {
         while (!this.free.isEmpty() && this.nonPooledAvailableMemory < size)
             this.nonPooledAvailableMemory += this.free.pollLast().capacity();

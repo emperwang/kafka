@@ -51,17 +51,24 @@ public class DefaultPartitioner implements Partitioner {
      * @param valueBytes serialized value to partition on or null
      * @param cluster The current cluster metadata
      */
+    // 默认的分区策略
     public int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] valueBytes, Cluster cluster) {
+        // 集群中 关于此 topic的分区信息
         List<PartitionInfo> partitions = cluster.partitionsForTopic(topic);
+        // 分区数
         int numPartitions = partitions.size();
         if (keyBytes == null) {
             int nextValue = nextValue(topic);
+            // 可用的分区数
             List<PartitionInfo> availablePartitions = cluster.availablePartitionsForTopic(topic);
             if (availablePartitions.size() > 0) {
+                // 可用的分区数大于0, 则使用一个计数器 和 分区数取余, 相当于是 轮询发送
                 int part = Utils.toPositive(nextValue) % availablePartitions.size();
                 return availablePartitions.get(part).partition();
             } else {
                 // no partitions are available, give a non-available partition
+                // 没有可用的分区,则使用给定的分区数
+                // 此同样是使用 累加器 取余, 效果类似于 轮询
                 return Utils.toPositive(nextValue) % numPartitions;
             }
         } else {

@@ -41,11 +41,15 @@ class MetadataCache {
     private final String clusterId;
     // 各个节点
     private final List<Node> nodes;
+    // 未授权的 topics
     private final Set<String> unauthorizedTopics;
+    // 暂不可用的 topics
     private final Set<String> invalidTopics;
+    // 内部的 topics
     private final Set<String> internalTopics;
     // 控制器
     private final Node controller;
+    // 映射TopicPartition --> PartitionInfoAndEpoch 关系
     private final Map<TopicPartition, PartitionInfoAndEpoch> metadataByPartition;
     // 集群信息
     private Cluster clusterInstance;
@@ -68,13 +72,19 @@ class MetadataCache {
                   Set<String> internalTopics,
                   Node controller,
                   Cluster clusterInstance) {
+        // 集群id,刚开始是null
         this.clusterId = clusterId;
+        // 集群中的节点
         this.nodes = nodes;
+        // 未授权的 topics
         this.unauthorizedTopics = unauthorizedTopics;
+        // 不可用的 topics
         this.invalidTopics = invalidTopics;
+        // 内部的topics
         this.internalTopics = internalTopics;
+        // 控制器
         this.controller = controller;
-
+        // 分区元数据
         this.metadataByPartition = new HashMap<>(partitions.size());
         for (PartitionInfoAndEpoch p : partitions) {
             this.metadataByPartition.put(new TopicPartition(p.partitionInfo().topic(), p.partitionInfo().partition()), p);
@@ -122,7 +132,7 @@ class MetadataCache {
             return clusterInstance;
         }
     }
-
+    // 创建映射关系
     private void computeClusterView() {
         List<PartitionInfo> partitionInfos = metadataByPartition.values()
                 .stream()
@@ -130,12 +140,15 @@ class MetadataCache {
                 .collect(Collectors.toList());
         this.clusterInstance = new Cluster(clusterId, nodes, partitionInfos, unauthorizedTopics, invalidTopics, internalTopics, controller);
     }
-
+    // 缓存集群的信息
     static MetadataCache bootstrap(List<InetSocketAddress> addresses) {
         List<Node> nodes = new ArrayList<>();
         int nodeId = -1;
+        // 通过address 记录下所有的 地址
         for (InetSocketAddress address : addresses)
             nodes.add(new Node(nodeId--, address.getHostString(), address.getPort()));
+        // 创建 metadata 缓存
+        // Cluster.bootstrap 这里还使用给定的地址,创建了 Cluster,即集群信息
         return new MetadataCache(null, nodes, Collections.emptyList(),
                 Collections.emptySet(), Collections.emptySet(), Collections.emptySet(), null, Cluster.bootstrap(addresses));
     }

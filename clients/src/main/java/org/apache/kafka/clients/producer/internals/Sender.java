@@ -121,8 +121,9 @@ public class Sender implements Runnable {
     private final TransactionManager transactionManager;
 
     // A per-partition queue of batches ordered by creation time for tracking the in-flight batches
+    // 记录每一个 分区 要发送的数据
     private final Map<TopicPartition, List<ProducerBatch>> inFlightBatches;
-
+    // 此sender创建后  在一个后台线程中持续运行
     public Sender(LogContext logContext,
                   KafkaClient client,
                   Metadata metadata,
@@ -137,21 +138,30 @@ public class Sender implements Runnable {
                   long retryBackoffMs,
                   TransactionManager transactionManager,
                   ApiVersions apiVersions) {
+        // 日志
         this.log = logContext.logger(Sender.class);
+        // 真正进行网络 IO的操作
         this.client = client;
+        //
         this.accumulator = accumulator;
         this.metadata = metadata;
         this.guaranteeMessageOrder = guaranteeMessageOrder;
+        // 最大请求数量
         this.maxRequestSize = maxRequestSize;
         this.running = true;
         this.acks = acks;
         this.retries = retries;
         this.time = time;
+        // sender 的监测信息
         this.sensors = new SenderMetrics(metricsRegistry, metadata, client, time);
+        // 请求的 超时
         this.requestTimeoutMs = requestTimeoutMs;
+        // 重试间隔
         this.retryBackoffMs = retryBackoffMs;
         this.apiVersions = apiVersions;
+        // 事务管理器
         this.transactionManager = transactionManager;
+        // 正在发送的  request
         this.inFlightBatches = new HashMap<>();
     }
 
@@ -174,19 +184,26 @@ public class Sender implements Runnable {
      */
     private List<ProducerBatch> getExpiredInflightBatches(long now) {
         List<ProducerBatch> expiredBatches = new ArrayList<>();
-
+        // 遍历 inFlight 中所有的 记录
         for (Iterator<Map.Entry<TopicPartition, List<ProducerBatch>>> batchIt = inFlightBatches.entrySet().iterator(); batchIt.hasNext();) {
+            //
             Map.Entry<TopicPartition, List<ProducerBatch>> entry = batchIt.next();
+            // 得到 数据
             List<ProducerBatch> partitionInFlightBatches = entry.getValue();
+            // 数据不为空
             if (partitionInFlightBatches != null) {
+                // 得到数据的迭代器
                 Iterator<ProducerBatch> iter = partitionInFlightBatches.iterator();
                 while (iter.hasNext()) {
                     ProducerBatch batch = iter.next();
+                    // 如果此 数据已经超时,  则移除
                     if (batch.hasReachedDeliveryTimeout(accumulator.getDeliveryTimeoutMs(), now)) {
                         iter.remove();
                         // expireBatches is called in Sender.sendProducerData, before client.poll.
                         // The !batch.isDone() invariant should always hold. An IllegalStateException
                         // exception will be thrown if the invariant is violated.
+                        // 如果此batch 还没有完成,那么添加到  expiredBatches 中
+                        // 否则抛出异常
                         if (!batch.isDone()) {
                             expiredBatches.add(batch);
                         } else {
@@ -194,10 +211,12 @@ public class Sender implements Runnable {
                                 batch.createdMs + " gets unexpected final state " + batch.finalState());
                         }
                     } else {
+                        // 没有过期则  更新此 batch的下次过期时间
                         accumulator.maybeUpdateNextBatchExpiryTime(batch);
                         break;
                     }
                 }
+                // 如果 数据为空, 则删除
                 if (partitionInFlightBatches.isEmpty()) {
                     batchIt.remove();
                 }
@@ -205,20 +224,24 @@ public class Sender implements Runnable {
         }
         return expiredBatches;
     }
-
+    // 可以看到这里,每一个分区对应一个容器,容器中记录了要发送到此分区的数据
     private void addToInflightBatches(List<ProducerBatch> batches) {
         for (ProducerBatch batch : batches) {
+            // 得到分区对应的容器
             List<ProducerBatch> inflightBatchList = inFlightBatches.get(batch.topicPartition);
+            // 没有容器,则创建一个
             if (inflightBatchList == null) {
                 inflightBatchList = new ArrayList<>();
                 inFlightBatches.put(batch.topicPartition, inflightBatchList);
             }
+            // 添加数据
             inflightBatchList.add(batch);
         }
     }
-
+    // 记录 每个正在发送的数据到 inflight
     public void addToInflightBatches(Map<Integer, List<ProducerBatch>> batches) {
         for (List<ProducerBatch> batchList : batches.values()) {
+            // 真实记录数据
             addToInflightBatches(batchList);
         }
     }
@@ -226,6 +249,7 @@ public class Sender implements Runnable {
     /**
      * The main run loop for the sender thread
      */
+    // sender 线程主要的工作
     public void run() {
         log.debug("Starting Kafka producer I/O thread.");
 
@@ -243,6 +267,8 @@ public class Sender implements Runnable {
         // okay we stopped accepting requests but there may still be
         // requests in the accumulator or waiting for acknowledgment,
         // wait until these are completed.
+        // 如果不是强制关闭的,如果关闭后还有数据没有发送的
+        // 则继续发送完数据
         while (!forceClose && (this.accumulator.hasUndrained() || this.client.inFlightRequestCount() > 0)) {
             try {
                 runOnce();
@@ -250,6 +276,7 @@ public class Sender implements Runnable {
                 log.error("Uncaught error in kafka producer I/O thread: ", e);
             }
         }
+        // 如果设置了强制关闭呢, 就直接把数据舍弃掉了
         if (forceClose) {
             // We need to fail all the incomplete batches and wake up the threads waiting on
             // the futures.
@@ -257,6 +284,7 @@ public class Sender implements Runnable {
             this.accumulator.abortIncompleteBatches();
         }
         try {
+            // networkClient 的关闭
             this.client.close();
         } catch (Exception e) {
             log.error("Failed to close network client", e);
@@ -269,7 +297,9 @@ public class Sender implements Runnable {
      * Run a single iteration of sending
      *
      */
+    // main loop 的业务实现
     void runOnce() {
+        // 如果有事务管理,则进行一写事务的相关处理
         if (transactionManager != null) {
             try {
                 if (transactionManager.shouldResetProducerStateAfterResolvingSequences())
@@ -306,18 +336,27 @@ public class Sender implements Runnable {
                 transactionManager.authenticationFailed(e);
             }
         }
-
+        // 获取当前时间
         long currentTimeMs = time.milliseconds();
+        // phase-1  数据发送
+        // -- 重点 ---
+        // 这里其实也就是把 此 produceRequest 设置到 kafakChannel中 send字段
+        // 并没有真正进行发送
         long pollTimeout = sendProducerData(currentTimeMs);
+        // 进行网路IO的操作,数据真正发送出去的地方
+        // -- 重点 ---
         client.poll(pollTimeout, currentTimeMs);
     }
-
+    // 发送 producer数据的 phase-1
     private long sendProducerData(long now) {
+        // 1. 获取缓存的 集群信息
         Cluster cluster = metadata.fetch();
         // get the list of partitions with data ready to send
+        //2. 得到 accumator中各个node 待发送的数据
         RecordAccumulator.ReadyCheckResult result = this.accumulator.ready(cluster, now);
 
         // if there are any partitions whose leaders are not known yet, force metadata update
+        // 3.如果有未知的 topics  则记录下来
         if (!result.unknownLeaderTopics.isEmpty()) {
             // The set of topics with unknown leader contains topics with leader election pending as well as
             // topics which may have expired. Add the topic again to metadata to ensure it is included
@@ -327,14 +366,19 @@ public class Sender implements Runnable {
 
             log.debug("Requesting metadata update due to unknown leader topics from the batched records: {}",
                 result.unknownLeaderTopics);
+            // 3.1 设置更新 metadata
             this.metadata.requestUpdate();
         }
 
         // remove any nodes we aren't ready to send to
+        // 4. 得到 准备发送数据 的node的迭代器
         Iterator<Node> iter = result.readyNodes.iterator();
         long notReadyTimeout = Long.MAX_VALUE;
         while (iter.hasNext()) {
             Node node = iter.next();
+            //5. 检查是否和 node 机器建立了连接
+            // 如果还没有建立连接, 就建立连接
+            // 连接建立失败,则删除此node
             if (!this.client.ready(node, now)) {
                 iter.remove();
                 notReadyTimeout = Math.min(notReadyTimeout, this.client.pollDelayMs(node, now));
@@ -342,8 +386,13 @@ public class Sender implements Runnable {
         }
 
         // create produce requests
+        // key为nodeId, value为要发送的数据
+        // 6.这里就是 得到了 每个node 要发送的数据
         Map<Integer, List<ProducerBatch>> batches = this.accumulator.drain(cluster, result.readyNodes, this.maxRequestSize, now);
+        // 7.记录数据到 inflight 中, 即正在发送
+        // 这里就得到了 每一个分区要发送的数据
         addToInflightBatches(batches);
+        // 如果需要保证顺序,则 此处会 mute掉 要发送数据的 分区
         if (guaranteeMessageOrder) {
             // Mute all the partitions drained
             for (List<ProducerBatch> batchList : batches.values()) {
@@ -351,10 +400,13 @@ public class Sender implements Runnable {
                     this.accumulator.mutePartition(batch.topicPartition);
             }
         }
-
+        // 更新下次 超时的时间
         accumulator.resetNextBatchExpiryTime();
+        // 得到已经过期 还没有发送的数据
         List<ProducerBatch> expiredInflightBatches = getExpiredInflightBatches(now);
+        // 得到 Accumulator中的过期的  数据
         List<ProducerBatch> expiredBatches = this.accumulator.expiredBatches(now);
+        // 记录下总的过期数据
         expiredBatches.addAll(expiredInflightBatches);
 
         // Reset the producer id if an expired batch has previously been sent to the broker. Also update the metrics
@@ -371,6 +423,7 @@ public class Sender implements Runnable {
                 transactionManager.markSequenceUnresolved(expiredBatch.topicPartition);
             }
         }
+        // 监测数据
         sensors.updateProduceRequestMetrics(batches);
 
         // If we have any nodes that are ready to send + have sendable data, poll with 0 timeout so this can immediately
@@ -389,6 +442,9 @@ public class Sender implements Runnable {
             // otherwise the select time will be the time difference between now and the metadata expiry time;
             pollTimeout = 0;
         }
+        // 发送 producerRequest
+        //8. 这里其实也就是把 此 produceRequest 设置到 kafakChannel中 send字段
+        // 并没有真正进行发送
         sendProduceRequests(batches, now);
         return pollTimeout;
     }
@@ -738,14 +794,19 @@ public class Sender implements Runnable {
     /**
      * Transfer the record batches into a list of produce requests on a per-node basis
      */
+    // 发送 produceRequest 请求
     private void sendProduceRequests(Map<Integer, List<ProducerBatch>> collated, long now) {
         for (Map.Entry<Integer, List<ProducerBatch>> entry : collated.entrySet())
+            // 发送 produceRequest
+            // 这里其实也就是把 此 produceRequest 设置到 kafakChannel中 send字段
+            // 并没有真正进行发送
             sendProduceRequest(now, entry.getKey(), acks, requestTimeoutMs, entry.getValue());
     }
 
     /**
      * Create a produce request from the given record batches
      */
+    // 创建 produceRequest请求
     private void sendProduceRequest(long now, int destination, short acks, int timeout, List<ProducerBatch> batches) {
         if (batches.isEmpty())
             return;
@@ -788,10 +849,14 @@ public class Sender implements Runnable {
                 handleProduceResponse(response, recordsByPartition, time.milliseconds());
             }
         };
-
+        // nodeid
         String nodeId = Integer.toString(destination);
+        // 创建 clientRequest
         ClientRequest clientRequest = client.newClientRequest(nodeId, requestBuilder, now, acks != 0,
                 requestTimeoutMs, callback);
+        // 发送请求
+        // 这里其实也就是把 此 produceRequest 设置到 kafakChannel中 send字段
+        // 并没有真正进行发送
         client.send(clientRequest, now);
         log.trace("Sent produce request to {}: {}", nodeId, requestBuilder);
     }

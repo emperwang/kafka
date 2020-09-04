@@ -76,6 +76,7 @@ public class Metadata implements Closeable {
     // 是否需要更新 metadata
     private boolean needUpdate;
     /* Topics with expiry time */
+    // 记录所有的topic 及其  过期时间
     private final Map<String, Long> topics;
     private final List<Listener> listeners;
     private final ClusterResourceListeners clusterResourceListeners;
@@ -106,26 +107,39 @@ public class Metadata implements Closeable {
                     boolean allowAutoTopicCreation,
                     boolean topicExpiryEnabled,
                     ClusterResourceListeners clusterResourceListeners) {
+        // 刷新 的间隔
         this.refreshBackoffMs = refreshBackoffMs;
+        // metadata 过期时间
         this.metadataExpireMs = metadataExpireMs;
         this.allowAutoTopicCreation = allowAutoTopicCreation;
         this.topicExpiryEnabled = topicExpiryEnabled;
+        // 上次刷新时间
         this.lastRefreshMs = 0L;
+        // 上次成功刷新时间
         this.lastSuccessfulRefreshMs = 0L;
+        // 请求版本
         this.requestVersion = 0;
+        // 更新版本
         this.updateVersion = 0;
+        // 是否需要更新
         this.needUpdate = false;
+        // 主题
         this.topics = new HashMap<>();
+        // 监听器
         this.listeners = new ArrayList<>();
+        // 集群资源 监听器
         this.clusterResourceListeners = clusterResourceListeners;
         this.needMetadataForAllTopics = false;
+        // 是否已经关闭
         this.isClosed = false;
+        // 上次 leader epoch
         this.lastSeenLeaderEpochs = new HashMap<>();
     }
 
     /**
      * Get the current cluster info without blocking
      */
+    // 获取当前记录的集群信息
     public synchronized Cluster fetch() {
         return cache.cluster();
     }
@@ -134,9 +148,11 @@ public class Metadata implements Closeable {
      * Add the topic to maintain in the metadata. If topic expiry is enabled, expiry time
      * will be reset on the next update.
      */
+    // 记录 topic
     public synchronized void add(String topic) {
         Objects.requireNonNull(topic, "topic cannot be null");
         if (topics.put(topic, TOPIC_EXPIRY_NEEDS_UPDATE) == null) {
+            // 并记录需要更新 metadata 信息
             requestUpdateForNewTopics();
         }
     }
@@ -167,6 +183,8 @@ public class Metadata implements Closeable {
     /**
      * Request an update of the current cluster metadata info, return the current version before the update
      */
+    // 记录 需要更新
+    // 返回 集群当前的版本信息
     public synchronized int requestUpdate() {
         this.needUpdate = true;
         return this.updateVersion;
@@ -251,10 +269,11 @@ public class Metadata implements Closeable {
     /**
      * Wait for metadata update until the current version is larger than the last version we know of
      */
+    // 一个等待操作
     public synchronized void awaitUpdate(final int lastVersion, final long maxWaitMs) throws InterruptedException {
         if (maxWaitMs < 0)
             throw new IllegalArgumentException("Max time to wait for metadata updates should not be < 0 milliseconds");
-
+        // 开始时间
         long begin = System.currentTimeMillis();
         long remainingWaitMs = maxWaitMs;
         while ((this.updateVersion <= lastVersion) && !isClosed()) {
@@ -323,6 +342,7 @@ public class Metadata implements Closeable {
         // 更新版本
         this.updateVersion += 1;
         // 缓存的集群信息
+        // 这些 addresses 是启动producer时 bootstrap.servers 的配置值
         this.cache = MetadataCache.bootstrap(addresses);
     }
 
@@ -555,9 +575,11 @@ public class Metadata implements Closeable {
     }
 
     // Visible for testing
+    // 请求更新
     synchronized void requestUpdateForNewTopics() {
         // Override the timestamp of last refresh to let immediate update.
         this.lastRefreshMs = 0;
+        // 请求版本号 增加
         this.requestVersion++;
         requestUpdate();
     }
