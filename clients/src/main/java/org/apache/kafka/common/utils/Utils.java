@@ -558,6 +558,7 @@ public final class Utils {
      * Read a properties file from the given path
      * @param filename The path of the file to read
      */
+    // load properties 文件内容到  properties中
     public static Properties loadProps(String filename) throws IOException {
         Properties props = new Properties();
 

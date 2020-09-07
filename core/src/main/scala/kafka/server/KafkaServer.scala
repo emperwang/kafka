@@ -203,39 +203,48 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
    * Start up API for bringing up a single instance of the Kafka server.
    * Instantiates the LogManager, the SocketServer and the request handlers - KafkaRequestHandlers
    */
+    // 开始启动
   def startup() {
     try {
       info("starting")
-
+     // 如果正在关闭中,则不能再次启动
       if (isShuttingDown.get)
         throw new IllegalStateException("Kafka server is still shutting down, cannot re-start!")
-
+      // 如果已经启动,则不能再次启动
       if (startupComplete.get)
         return
 
       val canStartup = isStartingUp.compareAndSet(false, true)
+      // 设置当前broker 状态为 starting
       if (canStartup) {
         brokerState.newState(Starting)
 
         /* setup zookeeper */
+        // 初始化和 zk 的连接
+        // 并递归创建 zk上层节点信息
         initZkClient(time)
 
         /* Get or create cluster_id */
+        // 集群id 信息, uuid值的base64
         _clusterId = getOrGenerateClusterId(zkClient)
         info(s"Cluster ID = $clusterId")
 
         /* generate brokerId */
+        // 读取 log 目录下的 meta.properties 文件内容
         val (brokerId, initialOfflineDirs) = getBrokerIdAndOfflineDirs
         config.brokerId = brokerId
         logContext = new LogContext(s"[KafkaServer id=${config.brokerId}] ")
+        // log 前缀
         this.logIdent = logContext.logPrefix
 
         // initialize dynamic broker configs from ZooKeeper. Any updates made after this will be
         // applied after DynamicConfigManager starts.
+        // 读取 zk中的配置
         config.dynamicConfig.initialize(zkClient)
 
         /* start scheduler */
         kafkaScheduler = new KafkaScheduler(config.backgroundThreads)
+        // 初始化 kafkaScheduler ,创建线程池
         kafkaScheduler.startup()
 
         /* create and configure metrics */
@@ -253,7 +262,10 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
         logDirFailureChannel = new LogDirFailureChannel(config.logDirs.size)
 
         /* start log manager */
+        // logmanager
+        // 初始化 会加载 log
         logManager = LogManager(config, initialOfflineDirs, zkClient, brokerState, kafkaScheduler, time, brokerTopicStats, logDirFailureChannel)
+        // 开启后台 日志 flush 保留 日志清理 等线程
         logManager.startup()
 
         metadataCache = new MetadataCache(config.brokerId)
@@ -369,11 +381,13 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
   protected def createReplicaManager(isShuttingDown: AtomicBoolean): ReplicaManager =
     new ReplicaManager(config, metrics, time, zkClient, kafkaScheduler, logManager, isShuttingDown, quotaManagers,
       brokerTopicStats, metadataCache, logDirFailureChannel)
-
+  // 初始化 和 zk 连接
+  // 并创建 上层 节点
   private def initZkClient(time: Time): Unit = {
     info(s"Connecting to zookeeper on ${config.zkConnect}")
 
     def createZkClient(zkConnect: String, isSecure: Boolean) =
+      // 在 这里创建了 一个 zk 客户端
       KafkaZkClient(zkConnect, isSecure, config.zkSessionTimeoutMs, config.zkConnectionTimeoutMs,
         config.zkMaxInFlightRequests, time)
 
@@ -397,11 +411,12 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
       info(s"Created zookeeper path $chroot")
       zkClient.close()
     }
-
+    // 调用内部函数  创建zk客户端
     _zkClient = createZkClient(config.zkConnect, secureAclsEnabled)
+    // 递归创建上层节点
     _zkClient.createTopLevelPaths()
   }
-
+  // 可见集群Id 是一个 UUID值的base64 编码
   private def getOrGenerateClusterId(zkClient: KafkaZkClient): String = {
     zkClient.getClusterId.getOrElse(zkClient.createOrGetClusterId(CoreUtils.generateUuidAsBase64))
   }
@@ -698,13 +713,16 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
     * @return A 2-tuple containing the brokerId and a sequence of offline log directories.
     */
   private def getBrokerIdAndOfflineDirs: (Int, Seq[String]) = {
+    // brokerid 信息
     var brokerId = config.brokerId
     val brokerIdSet = mutable.HashSet[Int]()
     val offlineDirs = mutable.ArrayBuffer.empty[String]
 
     for (logDir <- config.logDirs) {
       try {
+        // 读取 broker的meta 配置文件信息
         val brokerMetadataOpt = brokerMetadataCheckpoints(logDir).read()
+        // 记录 各个brokerId 信息
         brokerMetadataOpt.foreach { brokerMetadata =>
           brokerIdSet.add(brokerMetadata.brokerId)
         }

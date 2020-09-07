@@ -84,6 +84,7 @@ class ZooKeeperClient(connectString: String,
 
   info(s"Initializing a new session to $connectString.")
   // Fail-fast if there's an error during construction (so don't call initialize, which retries forever)
+  // 创建 zookeeper 客户端
   @volatile private var zooKeeper = new ZooKeeper(connectString, sessionTimeoutMs, ZooKeeperClientWatcher)
 
   newGauge("SessionState", new Gauge[String] {
@@ -91,7 +92,7 @@ class ZooKeeperClient(connectString: String,
   })
 
   metricNames += "SessionState"
-
+    // 过期调度线程 启动
   expiryScheduler.startup()
   try waitUntilConnected(connectionTimeoutMs, TimeUnit.MILLISECONDS)
   catch {
@@ -130,6 +131,7 @@ class ZooKeeperClient(connectString: String,
    * response type (e.g. Seq[CreateRequest] -> Seq[CreateResponse]). Otherwise, the most specific common supertype
    * will be used (e.g. Seq[AsyncRequest] -> Seq[AsyncResponse]).
    */
+    // 处理请求
   def handleRequests[Req <: AsyncRequest](requests: Seq[Req]): Seq[Req#Response] = {
     if (requests.isEmpty)
       Seq.empty
@@ -141,6 +143,8 @@ class ZooKeeperClient(connectString: String,
         inFlightRequests.acquire()
         try {
           inReadLock(initializationLock) {
+            // 发送请求
+            // send 柯里化 函数
             send(request) { response =>
               responseQueue.add(response)
               inFlightRequests.release()
@@ -159,6 +163,7 @@ class ZooKeeperClient(connectString: String,
   }
 
   // Visibility to override for testing
+  // 处理各种对 zk 的操作请求
   private[zookeeper] def send[Req <: AsyncRequest](request: Req)(processResponse: Req#Response => Unit): Unit = {
     // Safe to cast as we always create a response of the right type
     def callback(response: AsyncResponse): Unit = processResponse(response.asInstanceOf[Req#Response])

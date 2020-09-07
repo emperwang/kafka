@@ -405,7 +405,7 @@ object LogCleaner {
     KafkaConfig.LogCleanerIoMaxBytesPerSecondProp,
     KafkaConfig.LogCleanerBackoffMsProp
   )
-
+  // log 相关的配置
   def cleanerConfig(config: KafkaConfig): CleanerConfig = {
     CleanerConfig(numThreads = config.logCleanerThreads,
       dedupeBufferSize = config.logCleanerDedupeBufferSize,

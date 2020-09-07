@@ -454,6 +454,7 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
    * @return sequence of topics in the cluster.
    */
   def getAllTopicsInCluster: Seq[String] = {
+    // 发送 GetChildrenRequest 请求到 KafkaZookeeperClient 进行处理
     val getChildrenResponse = retryRequestUntilConnected(GetChildrenRequest(TopicsZNode.path))
     getChildrenResponse.resultCode match {
       case Code.OK => getChildrenResponse.children
@@ -1491,7 +1492,9 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
     */
   def createOrGetClusterId(proposedClusterId: String): String = {
     try {
+      // 创建 cluster/id/ 下的 集群id
       createRecursive(ClusterIdZNode.path, ClusterIdZNode.toJson(proposedClusterId))
+      // 返回集群id
       proposedClusterId
     } catch {
       case _: NodeExistsException => getClusterId.getOrElse(
@@ -1520,6 +1523,7 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
   /**
     * Pre-create top level paths in ZK if needed.
     */
+    // 递归 创建 上层节点
   def createTopLevelPaths(): Unit = {
     ZkData.PersistentZkPaths.foreach(makeSurePersistentPathExists(_))
   }
@@ -1528,7 +1532,9 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
     * Make sure a persistent path exists in ZK.
     * @param path
     */
+    // 创建 path 节点
   def makeSurePersistentPathExists(path: String): Unit = {
+      // 递归 创建 path节点
     createRecursive(path, data = null, throwIfPathExists = false)
   }
 
@@ -1581,9 +1587,12 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
       if (indexOfLastSlash == -1) throw new IllegalArgumentException(s"Invalid path ${path}")
       path.substring(0, indexOfLastSlash)
     }
-
+    // 递归创建 path 节点
     def createRecursive0(path: String): Unit = {
+      // 创建给请求, 样例类
       val createRequest = CreateRequest(path, null, defaultAcls(path), CreateMode.PERSISTENT)
+      // 发送请求到 kafakZookeeperClient
+      // 并得到 响应
       var createResponse = retryRequestUntilConnected(createRequest)
       if (createResponse.resultCode == Code.NONODE) {
         createRecursive0(parentPath(path))
@@ -1595,10 +1604,11 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
         throw createResponse.resultException.get
       }
     }
-
+    // 创建 请求
     val createRequest = CreateRequest(path, data, defaultAcls(path), CreateMode.PERSISTENT)
+    // 发送请求到 kafakZookeeperClient
     var createResponse = retryRequestUntilConnected(createRequest)
-
+    // 根据结果 来进一步操作
     if (throwIfPathExists && createResponse.resultCode == Code.NODEEXISTS) {
       createResponse.maybeThrow
     } else if (createResponse.resultCode == Code.NONODE) {
@@ -1637,11 +1647,11 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
   def defaultAcls(path: String): Seq[ACL] = ZkData.defaultAcls(isSecure, path)
 
   def secure: Boolean = isSecure
-
+  // 发送请求到 kafakZookeeperClient
   private[zk] def retryRequestUntilConnected[Req <: AsyncRequest](request: Req, expectedControllerZkVersion: Int = ZkVersion.MatchAnyVersion): Req#Response = {
     retryRequestsUntilConnected(Seq(request), expectedControllerZkVersion).head
   }
-
+  // 发送请求到 kafakZokeeperClient
   private def retryRequestsUntilConnected[Req <: AsyncRequest](requests: Seq[Req], expectedControllerZkVersion: Int): Seq[Req#Response] = {
     expectedControllerZkVersion match {
       case ZkVersion.MatchAnyVersion => retryRequestsUntilConnected(requests)
@@ -1652,8 +1662,9 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
         throw new IllegalArgumentException(s"Expected controller epoch zkVersion $invalidVersion should be non-negative or equal to ${ZkVersion.MatchAnyVersion}")
     }
   }
-
+  // 发送请求  到 zookeeperClient
   private def retryRequestsUntilConnected[Req <: AsyncRequest](requests: Seq[Req]): Seq[Req#Response] = {
+    // 把一个 seq 转换为 ArrayBuffer
     val remainingRequests = ArrayBuffer(requests: _*)
     val responses = new ArrayBuffer[Req#Response]
     while (remainingRequests.nonEmpty) {
@@ -1821,6 +1832,7 @@ object KafkaZkClient {
             time: Time,
             metricGroup: String = "kafka.server",
             metricType: String = "SessionExpireListener") = {
+    // 创建 zk 客户端
     val zooKeeperClient = new ZooKeeperClient(connectString, sessionTimeoutMs, connectionTimeoutMs, maxInFlightRequests,
       time, metricGroup, metricType)
     new KafkaZkClient(zooKeeperClient, isSecure, time)

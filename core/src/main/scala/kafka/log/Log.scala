@@ -220,6 +220,7 @@ class Log(@volatile var dir: File,
   @volatile private var isMemoryMappedBufferClosed = false
 
   /* last time it was flushed */
+  // 上次 flush 的时间
   private val lastFlushedTime = new AtomicLong(time.milliseconds)
 
   def initFileSize: Int = {
@@ -2199,6 +2200,7 @@ object Log {
             logDirFailureChannel: LogDirFailureChannel): Log = {
     val topicPartition = Log.parseTopicPartitionName(dir)
     val producerStateManager = new ProducerStateManager(topicPartition, dir, maxProducerIdExpirationMs)
+    // 创建一个 log
     new Log(dir, config, logStartOffset, recoveryPoint, scheduler, brokerTopicStats, time, maxProducerIdExpirationMs,
       producerIdExpirationCheckIntervalMs, topicPartition, producerStateManager, logDirFailureChannel)
   }
@@ -2346,7 +2348,9 @@ object Log {
       else dirName
 
     val index = name.lastIndexOf('-')
+    // topic 名字
     val topic = name.substring(0, index)
+    // 分区名称
     val partitionString = name.substring(index + 1)
     if (topic.isEmpty || partitionString.isEmpty)
       throw exception(dir)
@@ -2354,7 +2358,7 @@ object Log {
     val partition =
       try partitionString.toInt
       catch { case _: NumberFormatException => throw exception(dir) }
-
+    // 根据 文件名字 得到  topicPartition信息
     new TopicPartition(topic, partition)
   }
 

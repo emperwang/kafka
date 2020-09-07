@@ -61,7 +61,9 @@ class BrokerMetadataCheckpoint(val file: File) extends Logging {
 
     lock synchronized {
       try {
+        // 加载文件内容到 properties
         val brokerMetaProps = new VerifiableProperties(Utils.loadProps(file.getAbsolutePath()))
+        // 版本号
         val version = brokerMetaProps.getIntInRange("version", (0, Int.MaxValue))
         version match {
           case 0 =>
