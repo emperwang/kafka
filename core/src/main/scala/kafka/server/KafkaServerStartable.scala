@@ -24,16 +24,20 @@ import kafka.utils.{Exit, Logging, VerifiableProperties}
 
 object KafkaServerStartable {
   def fromProps(serverProps: Properties) = {
+    // 信息监控相关
     val reporters = KafkaMetricsReporter.startReporters(new VerifiableProperties(serverProps))
+    // 创建 server启动函数
     new KafkaServerStartable(KafkaConfig.fromProps(serverProps, false), reporters)
   }
 }
 
 class KafkaServerStartable(val staticServerConfig: KafkaConfig, reporters: Seq[KafkaMetricsReporter]) extends Logging {
+  // server类
+  // 构造函数
   private val server = new KafkaServer(staticServerConfig, kafkaMetricsReporters = reporters)
 
   def this(serverConfig: KafkaConfig) = this(serverConfig, Seq.empty)
-
+  // server 端的 启动
   def startup() {
     try server.startup()
     catch {

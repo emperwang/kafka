@@ -52,11 +52,14 @@ trait KafkaMetricsReporter {
 }
 
 object KafkaMetricsReporter {
+  // 是否开始的一个 标志位
   val ReporterStarted: AtomicBoolean = new AtomicBoolean(false)
   private var reporters: ArrayBuffer[KafkaMetricsReporter] = null
 
   def startReporters (verifiableProps: VerifiableProperties): Seq[KafkaMetricsReporter] = {
     ReporterStarted synchronized {
+      // 没有启动 则进行启动
+      // ReporterStarted 防止重复启动
       if (!ReporterStarted.get()) {
         reporters = ArrayBuffer[KafkaMetricsReporter]()
         val metricsConfig = new KafkaMetricsConfig(verifiableProps)

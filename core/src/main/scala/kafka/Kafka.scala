@@ -30,7 +30,9 @@ import scala.collection.JavaConverters._
 object Kafka extends Logging {
 
   def getPropsFromArgs(args: Array[String]): Properties = {
+    // java 类,参数解析器
     val optionParser = new OptionParser(false)
+    // 配置解析器
     val overrideOpt = optionParser.accepts("override", "Optional property that should override values set in server.properties file")
       .withRequiredArg()
       .ofType(classOf[String])
@@ -38,7 +40,7 @@ object Kafka extends Logging {
     if (args.length == 0) {
       CommandLineUtils.printUsageAndDie(optionParser, "USAGE: java [options] %s server.properties [--override property=value]*".format(classOf[KafkaServer].getSimpleName()))
     }
-
+    // 解析 server.properties 文件到 properties中
     val props = Utils.loadProps(args(0))
 
     if (args.length > 1) {
@@ -47,7 +49,7 @@ object Kafka extends Logging {
       if (options.nonOptionArguments().size() > 0) {
         CommandLineUtils.printUsageAndDie(optionParser, "Found non argument parameters: " + options.nonOptionArguments().toArray.mkString(","))
       }
-
+      // 解析 覆盖的参数
       props ++= CommandLineUtils.parseKeyValueArgs(options.valuesOf(overrideOpt).asScala)
     }
     props
@@ -55,7 +57,9 @@ object Kafka extends Logging {
 
   def main(args: Array[String]): Unit = {
     try {
+      // 解析 args中的参数
       val serverProps = getPropsFromArgs(args)
+      // 使用解析的配置 创建 kafkaServerStartable
       val kafkaServerStartable = KafkaServerStartable.fromProps(serverProps)
 
       try {
@@ -68,10 +72,11 @@ object Kafka extends Logging {
       }
 
       // attach shutdown handler to catch terminating signals as well as normal termination
+      // 注册回调方法
       Runtime.getRuntime().addShutdownHook(new Thread("kafka-shutdown-hook") {
         override def run(): Unit = kafkaServerStartable.shutdown()
       })
-
+      //  启动
       kafkaServerStartable.startup()
       kafkaServerStartable.awaitShutdown()
     }

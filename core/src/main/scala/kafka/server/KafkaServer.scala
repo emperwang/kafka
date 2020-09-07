@@ -99,54 +99,70 @@ object KafkaServer {
  */
 class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNamePrefix: Option[String] = None,
                   kafkaMetricsReporters: Seq[KafkaMetricsReporter] = List()) extends Logging with KafkaMetricsGroup {
+  // 构造函数
+  // 是否完全启动
   private val startupComplete = new AtomicBoolean(false)
+  // 是否正在关闭
   private val isShuttingDown = new AtomicBoolean(false)
+  // 是否正在启动
   private val isStartingUp = new AtomicBoolean(false)
-
+  // 关闭 latch
   private var shutdownLatch = new CountDownLatch(1)
-
+  // jmx 前缀
   private val jmxPrefix: String = "kafka.server"
 
   private var logContext: LogContext = null
 
   var metrics: Metrics = null
-
+  // broker state 状态
   val brokerState: BrokerState = new BrokerState
-
+  // 数据--请求处理器
   var dataPlaneRequestProcessor: KafkaApis = null
+  // 控制器 -- 请求处理器
   var controlPlaneRequestProcessor: KafkaApis = null
-
+  // 授权 权限验证
   var authorizer: Option[Authorizer] = None
+  // sockerServer
   var socketServer: SocketServer = null
+  // 数据 - 请求处理 线程池
   var dataPlaneRequestHandlerPool: KafkaRequestHandlerPool = null
+  // 控制 -- 请求 处理线程池
   var controlPlaneRequestHandlerPool: KafkaRequestHandlerPool = null
 
   var logDirFailureChannel: LogDirFailureChannel = null
+  // 对log的管理
   var logManager: LogManager = null
-
+  // 备份管理
   var replicaManager: ReplicaManager = null
+  //
   var adminManager: AdminManager = null
+  // token 管理 ??
   var tokenManager: DelegationTokenManager = null
-
+  // 动态配置 处理
   var dynamicConfigHandlers: Map[String, ConfigHandler] = null
+  // 动态配置 管理
   var dynamicConfigManager: DynamicConfigManager = null
   var credentialProvider: CredentialProvider = null
   var tokenCache: DelegationTokenCache = null
-
+  // 组协调器
   var groupCoordinator: GroupCoordinator = null
-
+  /// 事务协调器
   var transactionCoordinator: TransactionCoordinator = null
-
+  // 控制器
   var kafkaController: KafkaController = null
-
+  // 调度器 ???
   var kafkaScheduler: KafkaScheduler = null
 
   var metadataCache: MetadataCache = null
+  //
   var quotaManagers: QuotaFactory.QuotaManagers = null
-
+  /// zk 客户端
   private var _zkClient: KafkaZkClient = null
+  // 相关性 id
   val correlationId: AtomicInteger = new AtomicInteger(0)
+  // broker 的源数据
   val brokerMetaPropsFile = "meta.properties"
+  // 
   val brokerMetadataCheckpoints = config.logDirs.map(logDir => (logDir, new BrokerMetadataCheckpoint(new File(logDir + File.separator + brokerMetaPropsFile)))).toMap
 
   private var _clusterId: String = null
