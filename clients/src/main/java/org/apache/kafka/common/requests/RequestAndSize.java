@@ -21,7 +21,9 @@ public class RequestAndSize {
     public final int size;
 
     public RequestAndSize(AbstractRequest request, int size) {
+        // 记录request
         this.request = request;
+        // 记录大小
         this.size = size;
     }
 }

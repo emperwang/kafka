@@ -277,6 +277,7 @@ class Log(@volatile var dir: File,
   @volatile private var replicaHighWatermark: Option[Long] = None
 
   /* the actual segments of the log */
+  // 真正的 日志 segment
   private val segments: ConcurrentNavigableMap[java.lang.Long, LogSegment] = new ConcurrentSkipListMap[java.lang.Long, LogSegment]
 
   // Visible for testing
@@ -1250,6 +1251,7 @@ class Log(@volatile var dir: File,
       // We create the local variables to avoid race conditions with updates to the log.
       val currentNextOffsetMetadata = nextOffsetMetadata
       val next = currentNextOffsetMetadata.messageOffset
+      // 没有消息可读
       if (startOffset == next) {
         val abortedTransactions =
           if (includeAbortedTxns) Some(List.empty[AbortedTransaction])
@@ -1257,7 +1259,7 @@ class Log(@volatile var dir: File,
         return FetchDataInfo(currentNextOffsetMetadata, MemoryRecords.EMPTY, firstEntryIncomplete = false,
           abortedTransactions = abortedTransactions)
       }
-
+      //  获取 偏移对应的 segment
       var segmentEntry = segments.floorEntry(startOffset)
 
       // return error on attempt to read beyond the log end offset or read below log start offset
@@ -1288,6 +1290,7 @@ class Log(@volatile var dir: File,
             segment.size
           }
         }
+        // 获取到 fetch 的信息
         val fetchInfo = segment.read(startOffset, maxOffset, maxLength, maxPosition, minOneMessage)
         if (fetchInfo == null) {
           segmentEntry = segments.higherEntry(segmentEntry.getKey)

@@ -251,6 +251,7 @@ class LogSegment private[log] (val log: FileRecords,
    */
   @threadsafe
   private[log] def translateOffset(offset: Long, startingFilePosition: Int = 0): LogOffsetPosition = {
+    // 根据offset 解析具体的偏移地址
     val mapping = offsetIndex.lookup(offset)
     log.searchForOffsetWithSize(offset, max(mapping.position, startingFilePosition))
   }
@@ -312,7 +313,7 @@ class LogSegment private[log] (val log: FileRecords,
             mapping.position
         min(min(maxPosition, endPosition) - startPosition, adjustedMaxSize).toInt
     }
-
+    // 记录 fetch info
     FetchDataInfo(offsetMetadata, log.slice(startPosition, fetchSize),
       firstEntryIncomplete = adjustedMaxSize < startOffsetAndSize.size)
   }

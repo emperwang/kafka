@@ -35,18 +35,24 @@ class BrokerMetadataCheckpoint(val file: File) extends Logging {
   def write(brokerMetadata: BrokerMetadata) = {
     lock synchronized {
       try {
+        // 创建一个 properties,并放入相关的属性
         val brokerMetaProps = new Properties()
         brokerMetaProps.setProperty("version", 0.toString)
         brokerMetaProps.setProperty("broker.id", brokerMetadata.brokerId.toString)
+        // 创建 文件输出流
         val temp = new File(file.getAbsolutePath + ".tmp")
         val fileOutputStream = new FileOutputStream(temp)
         try {
+          // 把properties中的文件 写入到文件
           brokerMetaProps.store(fileOutputStream, "")
           fileOutputStream.flush()
+          // 阻塞 同步到 磁盘
           fileOutputStream.getFD().sync()
         } finally {
+          // 流关闭
           Utils.closeQuietly(fileOutputStream, temp.getName)
         }
+        // 原子的修改 文件名
         Utils.atomicMoveWithFallback(temp.toPath, file.toPath)
       } catch {
         case ie: IOException =>

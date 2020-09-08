@@ -39,6 +39,7 @@ class ControllerEventManager(controllerId: Int, rateAndTimeMetrics: Map[Controll
 
   @volatile private var _state: ControllerState = ControllerState.Idle
   private val putLock = new ReentrantLock()
+  // 记录事件
   private val queue = new LinkedBlockingQueue[ControllerEvent]
   // Visible for test
   private[controller] val thread = new ControllerEventThread(ControllerEventManager.ControllerEventThreadName)
@@ -83,6 +84,7 @@ class ControllerEventManager(controllerId: Int, rateAndTimeMetrics: Map[Controll
 
     override def doWork(): Unit = {
       queue.take() match {
+          // 如果是关闭事件, 则进行关闭操作
         case KafkaController.ShutdownEventThread => initiateShutdown()
         case controllerEvent =>
           _state = controllerEvent.state

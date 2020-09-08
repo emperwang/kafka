@@ -86,10 +86,11 @@ class OffsetIndex(_file: File, baseOffset: Long, maxIndexSize: Int = -1, writabl
   def lookup(targetOffset: Long): OffsetPosition = {
     maybeLock(lock) {
       val idx = mmap.duplicate
+      // 查找slot
       val slot = largestLowerBoundSlotFor(idx, targetOffset, IndexSearchType.KEY)
       if(slot == -1)
         OffsetPosition(baseOffset, 0)
-      else
+      else  // 解析 entry
         parseEntry(idx, slot).asInstanceOf[OffsetPosition]
     }
   }

@@ -49,10 +49,14 @@ class KafkaRequestHandler(id: Int,
       // Since meter is calculated as total_recorded_value / time_window and
       // time_window is independent of the number of threads, each recorded idle
       // time should be discounted by # threads.
+      // 开始时间
       val startSelectTime = time.nanoseconds
-
+      // 获取请求
+      // ---- ------
       val req = requestChannel.receiveRequest(300)
+      // 结束时间
       val endTime = time.nanoseconds
+      // idle时间
       val idleTime = endTime - startSelectTime
       aggregateIdleMeter.mark(idleTime / totalHandlerThreads.get)
 
@@ -66,6 +70,7 @@ class KafkaRequestHandler(id: Int,
           try {
             request.requestDequeueTimeNanos = endTime
             trace(s"Kafka request handler $id on broker $brokerId handling request $request")
+            // 处理请求
             apis.handle(request)
           } catch {
             case e: FatalExitError =>
@@ -99,19 +104,23 @@ class KafkaRequestHandlerPool(val brokerId: Int,
                               numThreads: Int,
                               requestHandlerAvgIdleMetricName: String,
                               logAndThreadNamePrefix : String) extends Logging with KafkaMetricsGroup {
-
+  //  线程池数量
   private val threadPoolSize: AtomicInteger = new AtomicInteger(numThreads)
   /* a meter to track the average free capacity of the request handlers */
   private val aggregateIdleMeter = newMeter(requestHandlerAvgIdleMetricName, "percent", TimeUnit.NANOSECONDS)
 
   this.logIdent = "[" + logAndThreadNamePrefix + " Kafka Request Handler on Broker " + brokerId + "], "
+  // 记录 handler 线程
   val runnables = new mutable.ArrayBuffer[KafkaRequestHandler](numThreads)
+  // 遍历创建了多个后台线程
   for (i <- 0 until numThreads) {
     createHandler(i)
   }
-
+  // 创建 后台运行的 handler
   def createHandler(id: Int): Unit = synchronized {
+    // 创建了handler 线程
     runnables += new KafkaRequestHandler(id, brokerId, aggregateIdleMeter, threadPoolSize, requestChannel, apis, time)
+    // 后台运行线程
     KafkaThread.daemon(logAndThreadNamePrefix + "-kafka-request-handler-" + id, runnables(id)).start()
   }
 

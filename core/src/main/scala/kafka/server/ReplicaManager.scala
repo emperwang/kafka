@@ -179,13 +179,18 @@ class ReplicaManager(val config: KafkaConfig,
   }
 
   /* epoch of the controller that last changed the leader */
+  // controller epoch
   @volatile var controllerEpoch: Int = KafkaController.InitialControllerEpoch
+  // brokerid
   private val localBrokerId = config.brokerId
+  // 所有分区
   private val allPartitions = new Pool[TopicPartition, Partition](valueFactory = Some(tp =>
     Partition(tp, time, this)))
   private val replicaStateChangeLock = new Object
+  // 两个重要 创建 线程的方法
   val replicaFetcherManager = createReplicaFetcherManager(metrics, time, threadNamePrefix, quotaManagers.follower)
   val replicaAlterLogDirsManager = createReplicaAlterLogDirsManager(quotaManagers.alterLogDirs, brokerTopicStats)
+  // highWater 标记的线程是否启动的标志
   private val highWatermarkCheckPointThreadStarted = new AtomicBoolean(false)
   @volatile var highWatermarkCheckpoints = logManager.liveLogDirs.map(dir =>
     (dir.getAbsolutePath, new OffsetCheckpointFile(new File(dir, ReplicaManager.HighWatermarkFilename), logDirFailureChannel))).toMap
@@ -193,9 +198,11 @@ class ReplicaManager(val config: KafkaConfig,
   private var hwThreadInitialized = false
   this.logIdent = s"[ReplicaManager broker=$localBrokerId] "
   private val stateChangeLogger = new StateChangeLogger(localBrokerId, inControllerContext = false, None)
-
+  // isr 记录
   private val isrChangeSet: mutable.Set[TopicPartition] = new mutable.HashSet[TopicPartition]()
+  // 上次 isr 改变的时间
   private val lastIsrChangeMs = new AtomicLong(System.currentTimeMillis())
+  // 上次 isr 传播的时间
   private val lastIsrPropagationMs = new AtomicLong(System.currentTimeMillis())
 
   private var logDirFailureHandler: LogDirFailureHandler = null
@@ -424,6 +431,7 @@ class ReplicaManager(val config: KafkaConfig,
 
 
   def getPartitionOrException(topicPartition: TopicPartition, expectLeader: Boolean): Partition = {
+    // 获取此 topicPartition 对应的分区
     getPartition(topicPartition) match {
       case Some(partition) =>
         if (partition eq ReplicaManager.OfflinePartition)
@@ -840,6 +848,7 @@ class ReplicaManager(val config: KafkaConfig,
 
 
     def readFromLog(): Seq[(TopicPartition, LogReadResult)] = {
+      // 从localLog 中获取读取的数据信息
       val result = readFromLocalLog(
         replicaId = replicaId,
         fetchOnlyFromLeader = fetchOnlyFromLeader,
@@ -857,6 +866,7 @@ class ReplicaManager(val config: KafkaConfig,
     // check if this fetch request can be satisfied right away
     var bytesReadable: Long = 0
     var errorReadingData = false
+    // 记录每个分区要读取的信息
     val logReadResultMap = new mutable.HashMap[TopicPartition, LogReadResult]
     logReadResults.foreach { case (topicPartition, logReadResult) =>
       if (logReadResult.error != Errors.NONE)
@@ -874,6 +884,7 @@ class ReplicaManager(val config: KafkaConfig,
         tp -> FetchPartitionData(result.error, result.highWatermark, result.leaderLogStartOffset, result.info.records,
           result.lastStableOffset, result.info.abortedTransactions)
       }
+      // 回调 函数
       responseCallback(fetchPartitionData)
     } else {
       // construct the fetch results from the read results
@@ -894,6 +905,7 @@ class ReplicaManager(val config: KafkaConfig,
       // try to complete the request immediately, otherwise put it into the purgatory;
       // this is because while the delayed fetch operation is being created, new requests
       // may arrive and hence make this operation completable.
+      // 延迟 操作
       delayedFetchPurgatory.tryCompleteElseWatch(delayedFetch, delayedFetchKeys)
     }
   }
@@ -910,20 +922,24 @@ class ReplicaManager(val config: KafkaConfig,
                        quota: ReplicaQuota): Seq[(TopicPartition, LogReadResult)] = {
 
     def read(tp: TopicPartition, fetchInfo: PartitionData, limitBytes: Int, minOneMessage: Boolean): LogReadResult = {
+      // fetch 的offset
       val offset = fetchInfo.fetchOffset
+      // 最大字节数
       val partitionFetchSize = fetchInfo.maxBytes
+      // logstartOffset
       val followerLogStartOffset = fetchInfo.logStartOffset
-
+      // 监测 信息
       brokerTopicStats.topicStats(tp.topic).totalFetchRequestRate.mark()
       brokerTopicStats.allTopicsStats.totalFetchRequestRate.mark()
-
+      // 最大字节数 和 限制字节数 选择小的一个
       val adjustedMaxBytes = math.min(fetchInfo.maxBytes, limitBytes)
       try {
         trace(s"Fetching log segment for partition $tp, offset $offset, partition fetch size $partitionFetchSize, " +
           s"remaining response limit $limitBytes" +
           (if (minOneMessage) s", ignoring response/partition size limits" else ""))
-
+        /// 获取此 tp 对应的分区
         val partition = getPartitionOrException(tp, expectLeader = fetchOnlyFromLeader)
+        // 开始时间
         val fetchTimeMs = time.milliseconds
 
         // Try the read first, this tells us whether we need all of adjustedFetchSize for this partition
@@ -995,8 +1011,10 @@ class ReplicaManager(val config: KafkaConfig,
     }
 
     var limitBytes = fetchMaxBytes
+    // 存储结果
     val result = new mutable.ArrayBuffer[(TopicPartition, LogReadResult)]
     var minOneMessage = !hardMaxBytesLimit
+    // 对每个分区开始 读取操作
     readPartitionInfo.foreach { case (tp, fetchInfo) =>
       val readResult = read(tp, fetchInfo, limitBytes, minOneMessage)
       val recordBatchSize = readResult.info.records.sizeInBytes

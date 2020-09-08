@@ -111,13 +111,15 @@ public class RequestHeader extends AbstractRequestResponse {
     public ResponseHeader toResponseHeader() {
         return new ResponseHeader(correlationId);
     }
-
+        // 解析接收到数据的 请求头
     public static RequestHeader parse(ByteBuffer buffer) {
         try {
             short apiKey = buffer.getShort();
             short apiVersion = buffer.getShort();
+            // 根据 apiversion,获取对应的schema
             Schema schema = schema(apiKey, apiVersion);
             buffer.rewind();
+            // 解析请求头
             return new RequestHeader(schema.read(buffer));
         } catch (InvalidRequestException e) {
             throw e;

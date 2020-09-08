@@ -39,6 +39,7 @@ public class NetworkReceive implements Receive {
     private final int maxSize;
     private final MemoryPool memoryPool;
     private int requestedBufferSize = -1;
+    // 存储的数据
     private ByteBuffer buffer;
 
 

@@ -100,6 +100,8 @@ class KafkaApis(val requestChannel: RequestChannel,
   /**
    * Top-level method that handles all requests and multiplexes to the right api
    */
+    // 处理请求
+    // 针对不同的请求,有具体不同的处理方法
   def handle(request: RequestChannel.Request) {
     try {
       trace(s"Handling request:${request.requestDesc(true)} from connection ${request.context.connectionId};" +
@@ -518,10 +520,15 @@ class KafkaApis(val requestChannel: RequestChannel,
   /**
    * Handle a fetch request
    */
+    // 处理 fetch 请求
   def handleFetchRequest(request: RequestChannel.Request) {
+      // apiversion 版本
     val versionId = request.header.apiVersion
+      // clientId
     val clientId = request.header.clientId
+      //  具体请求
     val fetchRequest = request.body[FetchRequest]
+      // fetch 上下文
     val fetchContext = fetchManager.newContext(
       fetchRequest.metadata,
       fetchRequest.fetchData,
@@ -534,7 +541,9 @@ class KafkaApis(val requestChannel: RequestChannel,
     }
 
     val erroneous = mutable.ArrayBuffer[(TopicPartition, FetchResponse.PartitionData[Records])]()
+      // 感兴趣的数据
     val interesting = mutable.ArrayBuffer[(TopicPartition, FetchRequest.PartitionData)]()
+      // 是否是从follower 发送的fetch 请求
     if (fetchRequest.isFromFollower) {
       // The follower must have ClusterAction on ClusterResource in order to fetch partition data.
       if (authorize(request.session, ClusterAction, Resource.ClusterResource)) {
@@ -552,6 +561,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     } else {
       // Regular Kafka consumers need READ permission on each partition they are fetching.
       fetchContext.foreachPartition { (topicPartition, data) =>
+        // 先验证权限
         if (!authorize(request.session, Read, Resource(Topic, topicPartition.topic, LITERAL)))
           erroneous += topicPartition -> errorResponse(Errors.TOPIC_AUTHORIZATION_FAILED)
         else if (!metadataCache.contains(topicPartition))
@@ -670,6 +680,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         quotas.leader.record(responseSize)
         trace(s"Sending Fetch response with partitions.size=${unconvertedFetchResponse.responseData().size()}, " +
           s"metadata=${unconvertedFetchResponse.sessionId()}")
+        // createResponse 创建 response
         sendResponseExemptThrottle(request, createResponse(0), Some(updateConversionStats))
       } else {
         // Fetch size used to determine throttle time is calculated before any down conversions.
@@ -706,11 +717,12 @@ class KafkaApis(val requestChannel: RequestChannel,
         sendResponse(request, Some(createResponse(maxThrottleTimeMs)), Some(updateConversionStats))
       }
     }
-
+    // 如果interesting是空的
     if (interesting.isEmpty)
       processResponseCallback(Seq.empty)
     else {
       // call the replica manager to fetch messages from the local replica
+      // 通过replica manager 来获取数据
       replicaManager.fetchMessages(
         fetchRequest.maxWait.toLong,
         fetchRequest.replicaId,
@@ -1137,7 +1149,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       trace(s"Sending offset fetch response $offsetFetchResponse for correlation id ${header.correlationId} to client ${header.clientId}.")
       offsetFetchResponse
     }
-
+    //  创建response,并发送
     sendResponseMaybeThrottle(request, createResponse)
   }
 
@@ -2338,6 +2350,7 @@ class KafkaApis(val requestChannel: RequestChannel,
                                         onComplete: Option[Send => Unit] = None): Unit = {
     val throttleTimeMs = quotas.request.maybeRecordAndGetThrottleTimeMs(request)
     quotas.request.throttle(request, throttleTimeMs, sendResponse)
+    // 发送response
     sendResponse(request, Some(createResponse(throttleTimeMs)), onComplete)
   }
 
@@ -2351,6 +2364,7 @@ class KafkaApis(val requestChannel: RequestChannel,
                                          response: AbstractResponse,
                                          onComplete: Option[Send => Unit] = None): Unit = {
     quotas.request.maybeRecordExempt(request)
+    // 返回 响应
     sendResponse(request, Some(response), onComplete)
   }
 
@@ -2379,13 +2393,13 @@ class KafkaApis(val requestChannel: RequestChannel,
     requestChannel.updateErrorMetrics(request.header.apiKey, errorCounts.asScala)
     requestChannel.sendResponse(new RequestChannel.CloseConnectionResponse(request))
   }
-
+  // 发送响应
   private def sendResponse(request: RequestChannel.Request,
                            responseOpt: Option[AbstractResponse],
                            onComplete: Option[Send => Unit]): Unit = {
     // Update error metrics for each error code in the response including Errors.NONE
     responseOpt.foreach(response => requestChannel.updateErrorMetrics(request.header.apiKey, response.errorCounts.asScala))
-
+    // 得到响应
     val response = responseOpt match {
       case Some(response) =>
         val responseSend = request.context.buildResponse(response)
@@ -2396,9 +2410,10 @@ class KafkaApis(val requestChannel: RequestChannel,
       case None =>
         new RequestChannel.NoOpResponse(request)
     }
+    // 发送响应
     sendResponse(response)
   }
-
+  // 发送响应,即 把响应 response 记录到 responseQueue中
   private def sendResponse(response: RequestChannel.Response): Unit = {
     requestChannel.sendResponse(response)
   }

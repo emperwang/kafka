@@ -66,11 +66,13 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
                       threadNamePrefix: Option[String] = None) extends Logging with KafkaMetricsGroup {
 
   this.logIdent = s"[Controller id=${config.brokerId}] "
-
+        // brokerInfo 信息记录
   @volatile private var brokerInfo = initialBrokerInfo
+        // broker epoch记录
   @volatile private var _brokerEpoch = initialBrokerEpoch
 
   private val stateChangeLogger = new StateChangeLogger(config.brokerId, inControllerContext = true, None)
+  // 控制器 上下文
   val controllerContext = new ControllerContext
 
   // have a separate scheduler for the controller to be able to start and stop independently of the kafka server
@@ -86,16 +88,25 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
   val replicaStateMachine = new ReplicaStateMachine(config, stateChangeLogger, controllerContext, topicDeletionManager, zkClient, mutable.Map.empty, new ControllerBrokerRequestBatch(this, stateChangeLogger))
   val partitionStateMachine = new PartitionStateMachine(config, stateChangeLogger, controllerContext, zkClient, mutable.Map.empty, new ControllerBrokerRequestBatch(this, stateChangeLogger))
   partitionStateMachine.setTopicDeletionManager(topicDeletionManager)
-
+  // 控制器 改变 处理器
   private val controllerChangeHandler = new ControllerChangeHandler(this, eventManager)
+  // broker 改变 处理器
   private val brokerChangeHandler = new BrokerChangeHandler(this, eventManager)
+  //
   private val brokerModificationsHandlers: mutable.Map[Int, BrokerModificationsHandler] = mutable.Map.empty
+  // topic 改变处理器
   private val topicChangeHandler = new TopicChangeHandler(this, eventManager)
+  // topic 删除处理器
   private val topicDeletionHandler = new TopicDeletionHandler(this, eventManager)
+  // partition改变处理器
   private val partitionModificationsHandlers: mutable.Map[String, PartitionModificationsHandler] = mutable.Map.empty
+  // partition 重新分配处理器
   private val partitionReassignmentHandler = new PartitionReassignmentHandler(this, eventManager)
+  // preferredReplicaElection 处理器
   private val preferredReplicaElectionHandler = new PreferredReplicaElectionHandler(this, eventManager)
+  // isr 改变通知 处理器
   private val isrChangeNotificationHandler = new IsrChangeNotificationHandler(this, eventManager)
+  // 日志目录 时间通知 处理器
   private val logDirEventNotificationHandler = new LogDirEventNotificationHandler(this, eventManager)
 
   @volatile private var activeControllerId = -1
@@ -178,7 +189,10 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
         expireEvent.waitUntilProcessingStarted()
       }
     })
+    // Startup 时间 处理时,  会竞选 controller
     eventManager.put(Startup)
+    // eventManger 启动
+    // eventManger把消息存储在queue中,开始一个后台线程来对消息进行处理
     eventManager.start()
   }
 
@@ -1174,13 +1188,14 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
       }
     }
   }
-
+  // 竞选 controller
   case object Startup extends ControllerEvent {
 
     def state = ControllerState.ControllerChange
 
     override def process(): Unit = {
       zkClient.registerZNodeChangeHandlerAndCheckExistence(controllerChangeHandler)
+      // 竞选
       elect()
     }
 
@@ -1248,18 +1263,21 @@ class KafkaController(val config: KafkaConfig, zkClient: KafkaZkClient, time: Ti
   }
 
   private def elect(): Unit = {
+    // 获取 active controller的id
     activeControllerId = zkClient.getControllerId.getOrElse(-1)
     /*
      * We can get here during the initial startup and the handleDeleted ZK callback. Because of the potential race condition,
      * it's possible that the controller has already been elected when we get here. This check will prevent the following
      * createEphemeralPath method from getting into an infinite loop if this broker is already the controller.
      */
+    // 如果不是-1,说明别人已经竞选成功
     if (activeControllerId != -1) {
       debug(s"Broker $activeControllerId has been elected as the controller, so stopping the election process.")
       return
     }
 
     try {
+      // 竞选 controller
       val (epoch, epochZkVersion) = zkClient.registerControllerAndIncrementControllerEpoch(config.brokerId)
       controllerContext.epoch = epoch
       controllerContext.epochZkVersion = epochZkVersion

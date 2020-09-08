@@ -950,6 +950,7 @@ public final class Utils {
         long currentPosition = position;
         int bytesRead;
         do {
+            /// 从 filechannel中读取数据到  destinationBuffer 中
             bytesRead = channel.read(destinationBuffer, currentPosition);
             currentPosition += bytesRead;
         } while (bytesRead != -1 && destinationBuffer.hasRemaining());

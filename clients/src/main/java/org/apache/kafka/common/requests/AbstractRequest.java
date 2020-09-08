@@ -139,6 +139,7 @@ public abstract class AbstractRequest extends AbstractRequestResponse {
     /**
      * Factory method for getting a request object based on ApiKey ID and a version
      */
+    // 根据 apiKey 生成对应的request 请求
     public static AbstractRequest parseRequest(ApiKeys apiKey, short apiVersion, Struct struct) {
         switch (apiKey) {
             case PRODUCE:

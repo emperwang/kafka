@@ -72,7 +72,7 @@ object RequestChannel extends Logging {
                 val context: RequestContext,
                 val startTimeNanos: Long,
                 memoryPool: MemoryPool,
-                @volatile private var buffer: ByteBuffer,
+                @volatile private var buffer: ByteBuffer, // 此networkReceive 接收到的数据
                 metrics: RequestChannel.Metrics) extends BaseRequest {
     // These need to be volatile because the readers are in the network thread and the writers are in the request
     // handler threads or the purgatory threads
@@ -86,6 +86,7 @@ object RequestChannel extends Logging {
     @volatile var recordNetworkThreadTimeCallback: Option[Long => Unit] = None
 
     val session = Session(context.principal, context.clientAddress)
+    // 根据apikey 解析请求,并记录请求和 大小
     private val bodyAndSize: RequestAndSize = context.parseRequest(buffer)
 
     def header: RequestHeader = context.header
@@ -99,7 +100,8 @@ object RequestChannel extends Logging {
     }
 
     def requestDesc(details: Boolean): String = s"$header -- ${body[AbstractRequest].toString(details)}"
-
+    // 返回请求
+    // 进行类型转换
     def body[T <: AbstractRequest](implicit classTag: ClassTag[T], nn: NotNothing[T]): T = {
       bodyAndSize.request match {
         case r: T => r
@@ -275,7 +277,9 @@ object RequestChannel extends Logging {
 class RequestChannel(val queueSize: Int, val metricNamePrefix : String) extends KafkaMetricsGroup {
   import RequestChannel._
   val metrics = new RequestChannel.Metrics
+  // 记录请求
   private val requestQueue = new ArrayBlockingQueue[BaseRequest](queueSize)
+  // 记录各种 processor,即处理器
   private val processors = new ConcurrentHashMap[Int, Processor]()
   val requestQueueSizeMetricName = metricNamePrefix.concat(RequestQueueSizeMetric)
   val responseQueueSizeMetricName = metricNamePrefix.concat(ResponseQueueSizeMetric)
@@ -308,11 +312,13 @@ class RequestChannel(val queueSize: Int, val metricNamePrefix : String) extends 
   }
 
   /** Send a request to be handled, potentially blocking until there is room in the queue for the request */
+    // 把一个 事件 放入到 queue中 等待处理
   def sendRequest(request: RequestChannel.Request) {
     requestQueue.put(request)
   }
 
   /** Send a response back to the socket server to be sent over the network */
+    // 返回响应
   def sendResponse(response: RequestChannel.Response) {
     if (isTraceEnabled) {
       val requestHeader = response.request.header
@@ -330,16 +336,18 @@ class RequestChannel(val queueSize: Int, val metricNamePrefix : String) extends 
       }
       trace(message)
     }
-
+    // 获取到对应的 处理器
     val processor = processors.get(response.processor)
     // The processor may be null if it was shutdown. In this case, the connections
     // are closed, so the response is dropped.
+      // 把响应结果  记录到 responseQueue 中,等待网络IO时  发送出去
     if (processor != null) {
       processor.enqueueResponse(response)
     }
   }
 
   /** Get the next request or block until specified time has elapsed */
+    // 阻塞获取请求
   def receiveRequest(timeout: Long): RequestChannel.BaseRequest =
     requestQueue.poll(timeout, TimeUnit.MILLISECONDS)
 

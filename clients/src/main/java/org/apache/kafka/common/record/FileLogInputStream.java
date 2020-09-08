@@ -177,6 +177,7 @@ public class FileLogInputStream implements LogInputStream<FileLogInputStream.Fil
             try {
                 int limit = buffer.limit();
                 buffer.limit(buffer.position() + sizeInBytes());
+                // 读取channel中的数据到 buffer中
                 Utils.readFully(channel, buffer, position);
                 buffer.limit(limit);
             } catch (IOException e) {

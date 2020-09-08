@@ -117,6 +117,7 @@ public class Selector implements Selectable, AutoCloseable {
     // 正在关闭的 channel
     private final Map<String, KafkaChannel> closingChannels;
     private Set<SelectionKey> keysWithBufferedRead;
+    // 失联的连接
     private final Map<String, ChannelState> disconnected;
     // 记录 连接的 channel
     private final List<String> connected;
@@ -344,8 +345,12 @@ public class Selector implements Selectable, AutoCloseable {
      * and its selection key cancelled.
      * </p>
      */
+    // 注册 nio 连接到 nioselector 上
     public void register(String id, SocketChannel socketChannel) throws IOException {
+        // 保证此id 对应的socketChannel 没有注册过
         ensureNotRegistered(id);
+        // 注册channel到 nioselector中
+        // 注册这里感兴趣的事件是 SelectionKey.OP_READ
         registerChannel(id, socketChannel, SelectionKey.OP_READ);
         this.sensors.connectionCreated.record();
     }
@@ -359,12 +364,15 @@ public class Selector implements Selectable, AutoCloseable {
     // 注册 socketChannel到 selector的操作
     protected SelectionKey registerChannel(String id, SocketChannel socketChannel, int interestedOps) throws IOException {
         // 注册 socketChannel 到 nioselector
+        // 真正的注册操作
         SelectionKey key = socketChannel.register(nioSelector, interestedOps);
-        // 创建kafkaChannel
+        // 1.创建kafkaChannel,进一步封装 socketChannel
+        // 2.把创建的 kafkaChannel attach到 selectKey上
         KafkaChannel channel = buildAndAttachKafkaChannel(socketChannel, id, key);
         // 记录创建的channel
         this.channels.put(id, channel);
         // 如果有 idle 管理器,则更新此 channel的 时间
+        // 由此可见,注册channel时, 就已经把channel放入到了 idleExpireManager中的 lru中,并记录了对应的时间
         if (idleExpiryManager != null)
             idleExpiryManager.update(channel.id(), time.nanoseconds());
         return key;
@@ -554,14 +562,17 @@ public class Selector implements Selectable, AutoCloseable {
         this.sensors.ioTime.record(endIo - endSelect, time.milliseconds());
 
         // Close channels that were delayed and are now ready to be closed
+        // 关闭那些超时的channel
         completeDelayedChannelClose(endIo);
 
         // we use the time at the end of select to ensure that we don't close any connections that
         // have just been processed in pollSelectionKeys
+        // 有expired 超时的连接,则尝试进行关闭
         maybeCloseOldestConnection(endSelect);
 
         // Add to completedReceives after closing expired connections to avoid removing
         // channels with completed receives until all staged receives are completed.
+        // 记录接收到消息到  completedReceives 中
         addToCompletedReceives();
     }
 
@@ -732,6 +743,7 @@ public class Selector implements Selectable, AutoCloseable {
             while ((networkReceive = channel.read()) != null) {
                 madeReadProgressLastPoll = true;
                 // 记录下 接收到的数据
+                // 记录到 stagedReceives,每一个channel对应一个存储数据的队列
                 addToStagedReceives(channel, networkReceive);
             }
             if (channel.isMute()) {
@@ -770,7 +782,9 @@ public class Selector implements Selectable, AutoCloseable {
 
     @Override
     public void mute(String id) {
+        // 获取id 对应的channel
         KafkaChannel channel = openOrClosingChannelOrFail(id);
+        // mute channel
         mute(channel);
     }
 
@@ -815,12 +829,13 @@ public class Selector implements Selectable, AutoCloseable {
                 break;
         }
     }
-
+    // 如果有过期的连接,则会进行关闭
     private void maybeCloseOldestConnection(long currentTimeNanos) {
         if (idleExpiryManager == null)
             return;
-
+        // 获取 超时的连接
         Map.Entry<String, Long> expiredConnection = idleExpiryManager.pollExpiredConnection(currentTimeNanos);
+        // 如果存在 超时的连接,则关闭
         if (expiredConnection != null) {
             String connectionId = expiredConnection.getKey();
             KafkaChannel channel = this.channels.get(connectionId);
@@ -1072,13 +1087,17 @@ public class Selector implements Selectable, AutoCloseable {
      */
     private void addToCompletedReceives() {
         if (!this.stagedReceives.isEmpty()) {
+            // 遍历所有的 接收到的消息
             Iterator<Map.Entry<KafkaChannel, Deque<NetworkReceive>>> iter = this.stagedReceives.entrySet().iterator();
             while (iter.hasNext()) {
                 Map.Entry<KafkaChannel, Deque<NetworkReceive>> entry = iter.next();
                 KafkaChannel channel = entry.getKey();
+                // 如果此channel 不是mute,则把此channel对应接收的消息记录起来
                 if (!explicitlyMutedChannels.contains(channel)) {
                     Deque<NetworkReceive> deque = entry.getValue();
+                    // 把接收到的 NetworkReceive 记录到 completedReceives中
                     addToCompletedReceives(channel, deque);
+                    // 如果 deque为空,则关闭
                     if (deque.isEmpty())
                         iter.remove();
                 }

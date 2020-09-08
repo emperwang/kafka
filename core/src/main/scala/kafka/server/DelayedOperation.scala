@@ -363,6 +363,7 @@ final class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: Stri
    * A linked list of watched delayed operations based on some key
    */
   private class Watchers(val key: Any) {
+    // 记录 watch的操作
     private[this] val operations = new ConcurrentLinkedQueue[T]()
 
     // count the current number of watched operations. This is O(n), so use isEmpty() if possible
@@ -372,13 +373,14 @@ final class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: Stri
 
     // add the element to watch
     def watch(t: T) {
+      // 添加 watch的操作
       operations.add(t)
     }
 
     // traverse the list and try to complete some watched elements
     def tryCompleteWatched(): Int = {
       var completed = 0
-
+      // 操作的迭代器
       val iter = operations.iterator()
       while (iter.hasNext) {
         val curr = iter.next()

@@ -281,11 +281,14 @@ public class KafkaChannel implements AutoCloseable {
     }
 
     // Handle the specified channel mute-related event and transition the mute state according to the state machine.
+    // 对事件的处理
     public void handleChannelMuteEvent(ChannelMuteEvent event) {
         boolean stateChanged = false;
         switch (event) {
+            // 接收到请求 的事件
             case REQUEST_RECEIVED:
                 if (muteState == ChannelMuteState.MUTED) {
+                    // 修改状态
                     muteState = ChannelMuteState.MUTED_AND_RESPONSE_PENDING;
                     stateChanged = true;
                 }

@@ -270,9 +270,10 @@ class Partition(val topicPartition: TopicPartition,
     else
       None
   }
-
+  // 获取本地 replica
   private def localReplicaWithEpochOrException(currentLeaderEpoch: Optional[Integer],
                                                requireLeader: Boolean): Replica = {
+    // 获取 本地 replica
     getLocalReplica(localBrokerId, currentLeaderEpoch, requireLeader) match {
       case Left(replica) => replica
       case Right(error) =>
@@ -780,6 +781,7 @@ class Partition(val topicPartition: TopicPartition,
                   fetchOnlyFromLeader: Boolean,
                   minOneMessage: Boolean): LogReadInfo = inReadLock(leaderIsrUpdateLock) {
     // decide whether to only fetch from leader
+    // 获取本地replica
     val localReplica = localReplicaWithEpochOrException(currentLeaderEpoch, fetchOnlyFromLeader)
 
     /* Read the LogOffsetMetadata prior to performing the read from the log.
@@ -792,13 +794,13 @@ class Partition(val topicPartition: TopicPartition,
     val initialLogStartOffset = localReplica.logStartOffset
     val initialLogEndOffset = localReplica.logEndOffset
     val initialLastStableOffset = localReplica.lastStableOffset.messageOffset
-
+    // 消息的最大 offset
     val maxOffsetOpt = fetchIsolation match {
       case FetchLogEnd => None
       case FetchHighWatermark => Some(initialHighWatermark)
       case FetchTxnCommitted => Some(initialLastStableOffset)
     }
-
+    // 对应的 fetchInfo,其封装了要读取的数据信息
     val fetchedData = localReplica.log match {
       case Some(log) =>
         log.read(fetchOffset, maxBytes, maxOffsetOpt, minOneMessage,

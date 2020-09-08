@@ -238,6 +238,7 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
    * @return CreateResponse
    */
   def createControllerEpochRaw(epoch: Int): CreateResponse = {
+    // 注册 controller epoch 以及创建 controller  node
     val createRequest = CreateRequest(ControllerEpochZNode.path, ControllerEpochZNode.encode(epoch),
       defaultAcls(ControllerEpochZNode.path), CreateMode.PERSISTENT)
     retryRequestUntilConnected(createRequest)
@@ -1013,8 +1014,11 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
    * @return optional integer that is Some if the controller znode exists and can be parsed and None otherwise.
    */
   def getControllerId: Option[Int] = {
+    // 生成GetDataRequest 请求
     val getDataRequest = GetDataRequest(ControllerZNode.path)
+    // 处理请求
     val getDataResponse = retryRequestUntilConnected(getDataRequest)
+    // 处理结果
     getDataResponse.resultCode match {
       case Code.OK => ControllerZNode.decode(getDataResponse.data)
       case Code.NONODE => None

@@ -995,8 +995,11 @@ object GroupCoordinator {
             zkClient: KafkaZkClient,
             replicaManager: ReplicaManager,
             time: Time): GroupCoordinator = {
+    // 心跳处理
     val heartbeatPurgatory = DelayedOperationPurgatory[DelayedHeartbeat]("Heartbeat", config.brokerId)
+    // rebalance 处理
     val joinPurgatory = DelayedOperationPurgatory[DelayedJoin]("Rebalance", config.brokerId)
+    // 创建   GroupCoordinator
     apply(config, zkClient, replicaManager, heartbeatPurgatory, joinPurgatory, time)
   }
 
@@ -1024,9 +1027,10 @@ object GroupCoordinator {
       groupMaxSessionTimeoutMs = config.groupMaxSessionTimeoutMs,
       groupMaxSize = config.groupMaxSize,
       groupInitialRebalanceDelayMs = config.groupInitialRebalanceDelay)
-
+    // groupMedata 管理器
     val groupMetadataManager = new GroupMetadataManager(config.brokerId, config.interBrokerProtocolVersion,
       offsetConfig, replicaManager, zkClient, time)
+    // 组协调器
     new GroupCoordinator(config.brokerId, groupConfig, offsetConfig, groupMetadataManager, heartbeatPurgatory, joinPurgatory, time)
   }
 

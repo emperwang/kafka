@@ -137,7 +137,9 @@ class GroupMetadataManager(brokerId: Int,
     })
 
   def startup(enableMetadataExpiration: Boolean) {
+    // 初始化  这 个 线程池
     scheduler.startup()
+    // 开始 清除 groupMetadata
     if (enableMetadataExpiration) {
       scheduler.schedule(name = "delete-expired-group-metadata",
         fun = () => cleanupGroupMetadata,
