@@ -583,6 +583,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
 
     // currentThread holds the threadId of the current thread accessing KafkaConsumer
     // and is used to prevent multi-threaded access
+    // 此用于存储 threadId
     private final AtomicLong currentThread = new AtomicLong(NO_CURRENT_THREAD);
     // refcount is used to allow reentrant access by the thread who has acquired currentThread
     private final AtomicInteger refcount = new AtomicInteger(0);
@@ -2294,7 +2295,9 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
      * @throws ConcurrentModificationException if another thread already has the lock
      */
     private void acquire() {
+        // 获取当前线程的 id
         long threadId = Thread.currentThread().getId();
+        // 判断是否是同一个线程在使用 客户端
         if (threadId != currentThread.get() && !currentThread.compareAndSet(NO_CURRENT_THREAD, threadId))
             throw new ConcurrentModificationException("KafkaConsumer is not safe for multi-threaded access");
         refcount.incrementAndGet();
